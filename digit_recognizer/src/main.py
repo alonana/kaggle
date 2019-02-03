@@ -19,6 +19,7 @@ def debug(msg):
 
 
 def display_sample():
+    debug("display sample")
     rows = 25
     data_frame = pd.read_csv(TRAIN_PATH, nrows=rows)
     fig = plt.figure(figsize=(IMAGE_SIZE, IMAGE_SIZE))
@@ -37,6 +38,7 @@ def display_sample():
 
 
 def data_prep(data_frame):
+    debug("data prep")
     out_y = keras.utils.to_categorical(data_frame.label, NUM_CLASSES)
 
     num_images = data_frame.shape[0]
@@ -47,6 +49,7 @@ def data_prep(data_frame):
 
 
 def build_model():
+    debug("build model")
     data_frame = pd.read_csv(TRAIN_PATH)
 
     x, y = data_prep(data_frame)
@@ -72,7 +75,35 @@ def build_model():
     model.save(MODEL_PATH)
 
 
+def predict():
+    debug("predict start")
+    model = keras.models.load_model(MODEL_PATH)
+    data_frame = pd.read_csv(TRAIN_PATH)
+    x, y = data_prep(data_frame)
+
+    debug("make predictions")
+    predictions_probabilities = model.predict(x).tolist()
+    debug("locate wrong")
+    predictions = []
+    for probabilities in predictions_probabilities:
+        c = probabilities.index(max(probabilities))
+        predictions.append(c)
+    labels = []
+    for label in y.tolist():
+        c = label.index(max(label))
+        labels.append(c)
+    debug(predictions)
+    debug(labels)
+    wrongs = []
+    for index, label in enumerate(labels):
+        if label != predictions[index]:
+            wrongs.append(index)
+    debug(len(wrongs))
+    debug(wrongs)
+
+
 debug("starting in folder {}".format(os.getcwd()))
-display_sample()
-build_model()
+# display_sample()
+# build_model()
+predict()
 debug("done")
