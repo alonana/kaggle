@@ -1,8 +1,10 @@
 import math
 import os
+import pickle
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from tensorflow.python import keras
 from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
@@ -10,6 +12,7 @@ from tensorflow.python.keras.models import Sequential
 
 TRAIN_PATH = '../data/train.csv'
 MODEL_PATH = '../output/model.h5'
+WRONGS_PATH = '../output/wrongs.txt'
 IMAGE_SIZE = 28
 NUM_CLASSES = 10
 
@@ -18,92 +21,124 @@ def debug(msg):
     print("{} ===> {}".format(datetime.now(), msg))
 
 
-def display_sample():
-    debug("display sample")
-    rows = 25
-    data_frame = pd.read_csv(TRAIN_PATH, nrows=rows)
-    fig = plt.figure(figsize=(IMAGE_SIZE, IMAGE_SIZE))
-    plt.subplots_adjust(hspace=0.35)
-    figures_per_edge = math.ceil(math.sqrt(rows))
-    ax = []
-    for row_index in range(rows):
-        row = data_frame.iloc[row_index]
-        image_matrix = data_frame.iloc[row_index, 1:].values.reshape(IMAGE_SIZE, IMAGE_SIZE)
-        subplot = fig.add_subplot(figures_per_edge, figures_per_edge, row_index + 1)
-        subplot.set_title(row['label'])
-        ax.append(subplot)
-        plt.axis('off')
-        plt.imshow(image_matrix, cmap="gray")
-    plt.show()
+class DigitRecognizer:
 
+    def __init__(self):
+        debug("loading csv starting")
+        self.data_frame = pd.read_csv(TRAIN_PATH)
+        debug("loading csv done")
 
-def data_prep(data_frame):
-    debug("data prep")
-    out_y = keras.utils.to_categorical(data_frame.label, NUM_CLASSES)
+    def display_sample(self):
+        debug("display sample")
+        num_images = self.data_frame.shape[0]
+        display_amount = 25
+        random_rows = np.random.randint(0, num_images - 1, display_amount)
+        self.display_images_by_index(random_rows)
 
-    num_images = data_frame.shape[0]
-    x_as_array = data_frame.values[:, 1:]
-    x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
-    out_x = x_shaped_array / 255
-    return out_x, out_y
+    def display_images_by_index(self, row_indexes, labels_suffix=None):
+        fig = plt.figure(figsize=(IMAGE_SIZE, IMAGE_SIZE))
+        plt.subplots_adjust(hspace=0.35)
+        figures_per_edge = math.ceil(math.sqrt(len(row_indexes)))
+        ax = []
+        for image_index, row_index in enumerate(row_indexes):
+            row = self.data_frame.iloc[row_index]
+            image_matrix = self.data_frame.iloc[row_index, 1:].values.reshape(IMAGE_SIZE, IMAGE_SIZE)
+            subplot = fig.add_subplot(figures_per_edge, figures_per_edge, image_index + 1)
+            label = row['label']
+            if labels_suffix is not None:
+                label = "{} {}".format(label, labels_suffix[image_index])
+            subplot.set_title(label)
+            ax.append(subplot)
+            plt.axis('off')
+            plt.imshow(image_matrix, cmap="gray")
+        plt.show()
 
+    def data_prep(self):
+        debug("data prep starting")
+        out_y = keras.utils.to_categorical(self.data_frame.label, NUM_CLASSES)
 
-def build_model():
-    debug("build model")
-    data_frame = pd.read_csv(TRAIN_PATH)
+        num_images = self.data_frame.shape[0]
+        x_as_array = self.data_frame.values[:, 1:]
+        x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
+        out_x = x_shaped_array / 255
+        debug("data prep done")
+        return out_x, out_y
 
-    x, y = data_prep(data_frame)
+    def build_model(self):
+        debug("build model")
 
-    model = Sequential()
-    model.add(Conv2D(20,
-                     kernel_size=(3, 3),
-                     activation='relu',
-                     input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
-    model.add(Conv2D(20, kernel_size=(3, 3), activation='relu'))
-    model.add(Flatten())
-    model.add(Dense(128, activation='relu'))
-    model.add(Dense(NUM_CLASSES, activation='softmax'))
+        x, y = self.data_prep()
 
-    model.compile(loss=keras.losses.categorical_crossentropy,
-                  optimizer='adam',
-                  metrics=['accuracy'])
-    model.fit(x, y,
-              batch_size=128,
-              epochs=2,
-              validation_split=0.2)
+        model = Sequential()
+        model.add(Conv2D(20,
+                         kernel_size=(3, 3),
+                         activation='relu',
+                         input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
+        model.add(Conv2D(20, kernel_size=(3, 3), activation='relu'))
+        model.add(Flatten())
+        model.add(Dense(128, activation='relu'))
+        model.add(Dense(NUM_CLASSES, activation='softmax'))
 
-    model.save(MODEL_PATH)
+        model.compile(loss=keras.losses.categorical_crossentropy,
+                      optimizer='adam',
+                      metrics=['accuracy'])
+        model.fit(x, y,
+                  batch_size=128,
+                  epochs=2,
+                  validation_split=0.2)
 
+        model.save(MODEL_PATH)
 
-def predict():
-    debug("predict start")
-    model = keras.models.load_model(MODEL_PATH)
-    data_frame = pd.read_csv(TRAIN_PATH)
-    x, y = data_prep(data_frame)
+    def predict(self):
+        debug("predict start")
+        model = keras.models.load_model(MODEL_PATH)
+        x, y = self.data_prep()
 
-    debug("make predictions")
-    predictions_probabilities = model.predict(x).tolist()
-    debug("locate wrong")
-    predictions = []
-    for probabilities in predictions_probabilities:
-        c = probabilities.index(max(probabilities))
-        predictions.append(c)
-    labels = []
-    for label in y.tolist():
-        c = label.index(max(label))
-        labels.append(c)
-    debug(predictions)
-    debug(labels)
-    wrongs = []
-    for index, label in enumerate(labels):
-        if label != predictions[index]:
-            wrongs.append(index)
-    debug(len(wrongs))
-    debug(wrongs)
+        debug("make predictions")
+        predictions_probabilities = model.predict(x).tolist()
+        debug("locate wrongs")
+        predictions = self.get_predictions_from_probabilities(predictions_probabilities)
+        labels = []
+        for label in y.tolist():
+            c = label.index(max(label))
+            labels.append(c)
+        debug(predictions)
+        debug(labels)
+        wrongs = []
+        for index, label in enumerate(labels):
+            if label != predictions[index]:
+                wrongs.append((index, predictions_probabilities[index]))
+        debug("{} wrongs: {}".format(len(wrongs), wrongs))
+        with open(WRONGS_PATH, "wb") as fp:
+            pickle.dump(wrongs, fp)
+
+    @staticmethod
+    def get_predictions_from_probabilities(predictions_probabilities):
+        predictions = []
+        for probabilities in predictions_probabilities:
+            c = probabilities.index(max(probabilities))
+            predictions.append(c)
+        return predictions
+
+    def display_wrongs(self):
+        with open(WRONGS_PATH, "rb") as fp:
+            wrongs = pickle.load(fp)
+        debug(wrongs)
+        wrongs_index = []
+        wrongs_probabilities = []
+        for index, probability in wrongs:
+            wrongs_index.append(index)
+            wrongs_probabilities.append(probability)
+        predictions = self.get_predictions_from_probabilities(wrongs_probabilities)
+        predictions = ["but was {}".format(prediction) for prediction in predictions]
+        display_amount = 49
+        self.display_images_by_index(wrongs_index[:display_amount], predictions[:display_amount])
 
 
 debug("starting in folder {}".format(os.getcwd()))
-# display_sample()
-# build_model()
-predict()
+dr = DigitRecognizer()
+# dr.display_sample()
+# dr.build_model()
+# dr.predict()
+dr.display_wrongs()
 debug("done")
