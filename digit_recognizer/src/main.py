@@ -83,7 +83,7 @@ class DigitRecognizer:
                       optimizer='adam',
                       metrics=['accuracy'])
         model.fit(x, y,
-                  batch_size=128,
+                  batch_size=32,
                   epochs=2,
                   validation_split=0.2)
 
@@ -92,6 +92,7 @@ class DigitRecognizer:
     def predict(self):
         debug("predict start")
         model = keras.models.load_model(MODEL_PATH)
+        print(model.summary())
         x, y = self.data_prep()
 
         debug("make predictions")
@@ -138,7 +139,49 @@ class DigitRecognizer:
 debug("starting in folder {}".format(os.getcwd()))
 dr = DigitRecognizer()
 # dr.display_sample()
-# dr.build_model()
-# dr.predict()
+dr.build_model()
+dr.predict()
 dr.display_wrongs()
 debug("done")
+
+# Layer (type)                 Output Shape              Param #
+# =================================================================
+# conv2d (Conv2D)              (None, 26, 26, 20)        200
+# _________________________________________________________________
+# conv2d_1 (Conv2D)            (None, 24, 24, 20)        3620
+# _________________________________________________________________
+# flatten (Flatten)            (None, 11520)             0
+# _________________________________________________________________
+# dense (Dense)                (None, 128)               1474688
+# _________________________________________________________________
+# dense_1 (Dense)              (None, 10)                1290
+# =================================================================
+# Epoch 1/2
+# 33600/33600 [==============================] - 132s 4ms/step - loss: 0.1785 - acc: 0.9456 - val_loss: 0.0709 - val_acc: 0.9764
+# Epoch 2/2
+# 33600/33600 [==============================] - 146s 4ms/step - loss: 0.0506 - acc: 0.9841 - val_loss: 0.0476 - val_acc: 0.9852
+# 2019-02-06 22:00:36.484171 ===> 338 wrongs
+
+
+
+#
+# Layer (type)                 Output Shape              Param #
+# =================================================================
+# conv2d (Conv2D)              (None, 26, 26, 20)        200
+# _________________________________________________________________
+# conv2d_1 (Conv2D)            (None, 24, 24, 20)        3620
+# _________________________________________________________________
+# conv2d_2 (Conv2D)            (None, 22, 22, 20)        3620
+# _________________________________________________________________
+# flatten (Flatten)            (None, 9680)              0
+# _________________________________________________________________
+# dense (Dense)                (None, 128)               1239168
+# _________________________________________________________________
+# dense_1 (Dense)              (None, 10)                1290
+# =================================================================
+# Epoch 1/2
+# 33600/33600 [==============================] - 193s 6ms/step - loss: 0.1503 - acc: 0.9536 - val_loss: 0.0568 - val_acc: 0.9840
+# Epoch 2/2
+# 33600/33600 [==============================] - 189s 6ms/step - loss: 0.0480 - acc: 0.9855 - val_loss: 0.0566 - val_acc: 0.9806
+# 2019-02-06 22:20:43.720672 ===> 426 wrongs
+
