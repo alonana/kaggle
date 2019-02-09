@@ -131,7 +131,7 @@ class DigitRecognizer:
             wrongs_index.append(index)
             wrongs_probabilities.append(probability)
         predictions = self.get_predictions_from_probabilities(wrongs_probabilities)
-        predictions = ["but was {}".format(prediction) for prediction in predictions]
+        predictions = [" predict={}".format(prediction) for prediction in predictions]
         display_amount = 49
         self.display_images_by_index(wrongs_index[:display_amount], predictions[:display_amount])
 
@@ -139,8 +139,8 @@ class DigitRecognizer:
 debug("starting in folder {}".format(os.getcwd()))
 dr = DigitRecognizer()
 # dr.display_sample()
-dr.build_model()
-dr.predict()
+# dr.build_model()
+# dr.predict()
 dr.display_wrongs()
 debug("done")
 
