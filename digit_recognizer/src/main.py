@@ -1,16 +1,19 @@
 import math
 import os
 import pickle
+import random
 from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.ndimage import rotate, zoom
 from tensorflow.python import keras
 from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
 from tensorflow.python.keras.models import Sequential
 
 TRAIN_PATH = '../data/train.csv'
+AUGMENT_PATH = '../data/augment.csv'
 MODEL_PATH = '../output/model.h5'
 WRONGS_PATH = '../output/wrongs.txt'
 IMAGE_SIZE = 28
@@ -23,10 +26,14 @@ def debug(msg):
 
 class DigitRecognizer:
 
-    def __init__(self):
-        debug("loading csv starting")
-        self.data_frame = pd.read_csv(TRAIN_PATH)
-        debug("loading csv done")
+    def __init__(self, path=TRAIN_PATH):
+        debug("loading csv from {} starting".format(path))
+        self.data_frame = pd.read_csv(path)
+        debug("loading csv done, loaded {} rows".format(self.data_frame.shape[0]))
+
+    def save_csv(self, path):
+        debug("save csv to {}".format(path))
+        self.data_frame.to_csv(path)
 
     def display_sample(self):
         debug("display sample")
@@ -35,7 +42,45 @@ class DigitRecognizer:
         random_rows = np.random.randint(0, num_images - 1, display_amount)
         self.display_images_by_index(random_rows)
 
+    def augmentate_sample(self, amount, display=False):
+        debug('augmentation for {} samples'.format(amount))
+        indexes = [random.randint(0, self.data_frame.shape[0]) for i in range(amount)]
+        display_indexes = []
+        for i in indexes:
+            display_indexes.append(i)
+            display_indexes.append(self.data_frame.shape[0])
+            self.add_augmentate(i)
+        if display:
+            self.display_images_by_index(display_indexes)
+
+    def add_augmentate(self, i):
+        debug("augment index {}".format(i))
+        angle = random.randint(-30, 30)
+        new_row = self.data_frame.iloc[i].copy()
+        image_matrix = new_row.values[1:].reshape(IMAGE_SIZE, IMAGE_SIZE)
+        image_matrix = rotate(image_matrix, angle, reshape=False)
+
+        image_matrix = self.random_zoom(image_matrix)
+
+        points_array = image_matrix.reshape(IMAGE_SIZE * IMAGE_SIZE)
+        new_row[1:] = points_array
+        self.data_frame = self.data_frame.append(new_row)
+
+    def random_zoom(self, image_matrix):
+        h, w = image_matrix.shape[:2]
+        zoom_factor = 1 - random.uniform(0, 0.3)
+        zh = int(np.round(h * zoom_factor))
+        zw = int(np.round(w * zoom_factor))
+        top = (h - zh) // 2
+        left = (w - zw) // 2
+        out = np.zeros_like(image_matrix)
+        zoom_tuple = (zoom_factor,) * 2 + (1,) * (image_matrix.ndim - 2)
+        out[top:top + zh, left:left + zw] = zoom(image_matrix, zoom_tuple)
+        image_matrix = out
+        return image_matrix
+
     def display_images_by_index(self, row_indexes, labels_suffix=None):
+        debug("display indexes {}".format(row_indexes))
         fig = plt.figure(figsize=(IMAGE_SIZE, IMAGE_SIZE))
         plt.subplots_adjust(hspace=0.35)
         figures_per_edge = math.ceil(math.sqrt(len(row_indexes)))
@@ -138,10 +183,13 @@ class DigitRecognizer:
 
 debug("starting in folder {}".format(os.getcwd()))
 dr = DigitRecognizer()
-# dr.display_sample()
-# dr.build_model()
-# dr.predict()
-dr.display_wrongs()
+dr.display_sample()
+dr.augmentate_sample(40000)
+dr.save_csv(AUGMENT_PATH)
+dr = DigitRecognizer(AUGMENT_PATH)
+dr.build_model()
+dr.predict()
+# dr.display_wrongs()
 debug("done")
 
 # Layer (type)                 Output Shape              Param #
@@ -161,7 +209,6 @@ debug("done")
 # Epoch 2/2
 # 33600/33600 [==============================] - 146s 4ms/step - loss: 0.0506 - acc: 0.9841 - val_loss: 0.0476 - val_acc: 0.9852
 # 2019-02-06 22:00:36.484171 ===> 338 wrongs
-
 
 
 #
@@ -184,4 +231,3 @@ debug("done")
 # Epoch 2/2
 # 33600/33600 [==============================] - 189s 6ms/step - loss: 0.0480 - acc: 0.9855 - val_loss: 0.0566 - val_acc: 0.9806
 # 2019-02-06 22:20:43.720672 ===> 426 wrongs
-
