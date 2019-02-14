@@ -2,6 +2,7 @@ import math
 import os
 import pickle
 import random
+import time
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -33,7 +34,7 @@ class DigitRecognizer:
 
     def save_csv(self, path):
         debug("save csv to {}".format(path))
-        self.data_frame.to_csv(path)
+        self.data_frame.to_csv(path, header=True, index=False)
 
     def display_sample(self):
         debug("display sample")
@@ -46,17 +47,21 @@ class DigitRecognizer:
         debug('augmentation for {} samples'.format(amount))
         indexes = [random.randint(0, self.data_frame.shape[0]) for i in range(amount)]
         display_indexes = []
-        for i in indexes:
+        last = time.time()
+        for counter, i in enumerate(indexes):
             display_indexes.append(i)
             display_indexes.append(self.data_frame.shape[0])
             self.add_augmentate(i)
+            if time.time() - last > 10:
+                last = time.time()
+                debug("augment {} out of {}".format(counter, len(indexes)))
         if display:
             self.display_images_by_index(display_indexes)
 
     def add_augmentate(self, i):
-        debug("augment index {}".format(i))
         angle = random.randint(-30, 30)
-        new_row = self.data_frame.iloc[i].copy()
+        orig_row = self.data_frame.iloc[i]
+        new_row = orig_row.copy()
         image_matrix = new_row.values[1:].reshape(IMAGE_SIZE, IMAGE_SIZE)
         image_matrix = rotate(image_matrix, angle, reshape=False)
 
@@ -182,14 +187,14 @@ class DigitRecognizer:
 
 
 debug("starting in folder {}".format(os.getcwd()))
-dr = DigitRecognizer()
-dr.display_sample()
-dr.augmentate_sample(40000)
-dr.save_csv(AUGMENT_PATH)
+# dr = DigitRecognizer()
+# dr.display_sample()
+# dr.augmentate_sample(5)
+# dr.save_csv(AUGMENT_PATH)
 dr = DigitRecognizer(AUGMENT_PATH)
 dr.build_model()
 dr.predict()
-# dr.display_wrongs()
+dr.display_wrongs()
 debug("done")
 
 # Layer (type)                 Output Shape              Param #
