@@ -14,9 +14,11 @@ from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
 from tensorflow.python.keras.models import Sequential
 
 TRAIN_PATH = '../data/train.csv'
+TEST_PATH = '../data/test.csv'
 AUGMENT_PATH = '../data/augment.csv'
 MODEL_PATH = '../output/model.h5'
 WRONGS_PATH = '../output/wrongs.txt'
+SUBMISSION_PATH = '../output/submission.csv'
 IMAGE_SIZE = 28
 NUM_CLASSES = 10
 
@@ -27,9 +29,9 @@ def debug(msg):
 
 class DigitRecognizer:
 
-    def __init__(self, path=TRAIN_PATH):
+    def __init__(self, path=TRAIN_PATH, max_rows=None):
         debug("loading csv from {} starting".format(path))
-        self.data_frame = pd.read_csv(path)
+        self.data_frame = pd.read_csv(path, nrows=max_rows)
         debug("loading csv done, loaded {} rows".format(self.data_frame.shape[0]))
 
     def save_csv(self, path):
@@ -103,12 +105,18 @@ class DigitRecognizer:
             plt.imshow(image_matrix, cmap="gray")
         plt.show()
 
-    def data_prep(self):
+    def data_prep(self, labels_included=True):
         debug("data prep starting")
-        out_y = keras.utils.to_categorical(self.data_frame.label, NUM_CLASSES)
+
+        if labels_included:
+            out_y = keras.utils.to_categorical(self.data_frame.label, NUM_CLASSES)
+            start_column = 1
+        else:
+            start_column = 0
+            out_y = None
 
         num_images = self.data_frame.shape[0]
-        x_as_array = self.data_frame.values[:, 1:]
+        x_as_array = self.data_frame.values[:, start_column:]
         x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
         out_x = x_shaped_array / 255
         debug("data prep done")
@@ -163,6 +171,20 @@ class DigitRecognizer:
         with open(WRONGS_PATH, "wb") as fp:
             pickle.dump(wrongs, fp)
 
+    def predict_submission(self):
+        debug("predict start")
+        model = keras.models.load_model(MODEL_PATH)
+        x, y = self.data_prep(labels_included=False)
+
+        debug("make predictions")
+        predictions_probabilities = model.predict(x).tolist()
+        debug("save submission")
+        predictions = self.get_predictions_from_probabilities(predictions_probabilities)
+        submission = pd.DataFrame(data={"Label": predictions})
+        submission.index.names = ['ImageId']
+        submission.index += 1
+        submission.to_csv(SUBMISSION_PATH, header=True, index=True)
+
     @staticmethod
     def get_predictions_from_probabilities(predictions_probabilities):
         predictions = []
@@ -191,10 +213,13 @@ debug("starting in folder {}".format(os.getcwd()))
 # dr.display_sample()
 # dr.augmentate_sample(5)
 # dr.save_csv(AUGMENT_PATH)
-dr = DigitRecognizer(AUGMENT_PATH)
-dr.build_model()
-dr.predict()
-dr.display_wrongs()
+# dr = DigitRecognizer(AUGMENT_PATH)
+# dr.build_model()
+# dr.predict()
+# dr.display_wrongs()
+
+dr = DigitRecognizer(TEST_PATH)
+dr.predict_submission()
 debug("done")
 
 # Layer (type)                 Output Shape              Param #
