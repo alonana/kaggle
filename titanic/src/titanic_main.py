@@ -16,13 +16,13 @@ class Titanic:
 
     def __init__(self):
         self.df = pd.read_csv(TRAIN_PATH)
+        pd.set_option('display.max_columns', 500)
+        pd.set_option('display.width', 1000)
         self.use_columns = ['Sex', 'Age', 'Survived', 'Pclass', 'SibSp', 'Parch', 'Fare', 'Embarked']
         self.use_columns_numeric = ['Age', 'Survived', 'Pclass', 'SibSp', 'Parch', 'Fare']
 
     def general(self):
         debug("general")
-        pd.set_option('display.max_columns', 500)
-        pd.set_option('display.width', 1000)
         with open("../output/head.txt", "w") as file:
             file.write(str(self.df.head()))
         with open("../output/desc.txt", "w") as file:
@@ -59,9 +59,24 @@ class Titanic:
         plt.title(c)
         fig.savefig("../output/hex_Survived_{}.png".format(c))
 
+    def two_flavors_hist(self):
+        for c in self.use_columns_numeric:
+            self.two_flavors_hist_for_column(c)
+
+    def two_flavors_hist_for_column(self, c):
+        debug("two flavor hist for {}".format(c))
+        fig, ax = plt.subplots()
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        self.df.groupby(['Survived'])[c].plot.hist(ax=ax, alpha=0.5)
+        plt.title(c)
+        plt.legend(['Died', 'Survived'])
+        fig.savefig("../output/two_flavor_hist_{}.png".format(c))
+
 
 t = Titanic()
-t.general()
-t.hist()
-t.hex()
-t.pair_plot()
+# t.general()
+# t.hist()
+# t.hex()
+# t.pair_plot()
+t.two_flavors_hist()
