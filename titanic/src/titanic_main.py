@@ -1,9 +1,12 @@
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
 
 TRAIN_PATH = '../data/train.csv'
 
@@ -73,10 +76,26 @@ class Titanic:
         plt.legend(['Died', 'Survived'])
         fig.savefig("../output/two_flavor_hist_{}.png".format(c))
 
+    def random_forest(self):
+        # https://towardsdatascience.com/random-forest-in-python-24d0893d51c0
+        df_relevant = self.df.drop('PassengerId', 1).drop('Name', 1).drop('Ticket', 1).drop('Cabin', 1)
+        df_relevant = pd.get_dummies(df_relevant)
+        print(df_relevant.head())
+        y = np.array(df_relevant['Survived'])
+        df_relevant = df_relevant.drop('Survived', 1)
+        X = np.array(df_relevant)
+        train_X, test_X, train_y, test_y = train_test_split(X, y, test_size=0.3, random_state=42)
+        rf = RandomForestRegressor(n_estimators=1000, random_state=42)
+        rf.fit(train_X, train_y)
+        predictions = rf.predict(test_X)
+        errors = abs(predictions - test_y)
+        print('Mean Absolute Error:', round(np.mean(errors), 2), 'degrees.')
+
 
 t = Titanic()
 # t.general()
 # t.hist()
 # t.hex()
 # t.pair_plot()
-t.two_flavors_hist()
+# t.two_flavors_hist()
+t.random_forest()
