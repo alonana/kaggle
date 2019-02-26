@@ -1,3 +1,4 @@
+import pickle
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -5,14 +6,17 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
+TEST_PATH = '../data/test.csv'
 TRAIN_PATH = '../data/train.csv'
+MODEL_PATH = '../output/model.dat'
+SUBMISSION_PATH = '../output/my_submission.csv'
 
 
 def debug(msg):
-    print("{} ===> {}".format(datetime.now(), msg))
+    print("{} ===>\n{}".format(datetime.now(), msg))
 
 
 class Titanic:
@@ -77,19 +81,41 @@ class Titanic:
         fig.savefig("../output/two_flavor_hist_{}.png".format(c))
 
     def random_forest(self):
-        # https://towardsdatascience.com/random-forest-in-python-24d0893d51c0
-        df_relevant = self.df.drop('PassengerId', 1).drop('Name', 1).drop('Ticket', 1).drop('Cabin', 1)
-        df_relevant = pd.get_dummies(df_relevant)
-        print(df_relevant.head())
+        debug("training")
+        df_relevant = self.prepare_data(self.df)
         y = np.array(df_relevant['Survived'])
         df_relevant = df_relevant.drop('Survived', 1)
         X = np.array(df_relevant)
         train_X, test_X, train_y, test_y = train_test_split(X, y, test_size=0.3, random_state=42)
-        rf = RandomForestRegressor(n_estimators=1000, random_state=42)
+        rf = RandomForestClassifier(n_estimators=1000, random_state=42)
         rf.fit(train_X, train_y)
         predictions = rf.predict(test_X)
         errors = abs(predictions - test_y)
-        print('Mean Absolute Error:', round(np.mean(errors), 2), 'degrees.')
+        debug('Mean Absolute Error: {}'.format(np.mean(errors)))
+        with open(MODEL_PATH, 'wb') as f:
+            pickle.dump(rf, f)
+
+    def prepare_data(self, df):
+        x = df.drop('PassengerId', 1).drop('Name', 1).drop('Ticket', 1).drop('Cabin', 1).drop('Age', 1)
+        x = pd.get_dummies(x)
+        return x
+
+    def predict_submission(self):
+        debug("predict start")
+        with open(MODEL_PATH, 'rb') as f:
+            rf = pickle.load(f)
+        df = pd.read_csv(TEST_PATH)
+        prepared = self.prepare_data(df)
+
+        fare = prepared['Fare']
+        mean = fare.mean()
+        prepared['Fare'] = fare.fillna(mean)
+
+        predictions = rf.predict(prepared)
+        submission = pd.DataFrame(data={"Survived": predictions})
+        submission.index.names = ['PassengerId']
+        submission.index += 892
+        submission.to_csv(SUBMISSION_PATH, header=True, index=True)
 
 
 t = Titanic()
@@ -98,4 +124,5 @@ t = Titanic()
 # t.hex()
 # t.pair_plot()
 # t.two_flavors_hist()
-t.random_forest()
+# t.random_forest()
+t.predict_submission()
