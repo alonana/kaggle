@@ -44,7 +44,7 @@ class Titanic:
         fig, ax = plt.subplots()
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        self.df[c].plot.hist(ax=ax)
+        self.df[c].plot.hist(ax=ax, bins=20)
         plt.title(c)
         fig.savefig("../output/hist_{}.png".format(c))
 
@@ -83,11 +83,13 @@ class Titanic:
     def random_forest(self):
         debug("training")
         df_relevant = self.prepare_data(self.df)
+
+        df_relevant = df_relevant.reindex(np.random.permutation(df_relevant.index))
         y = np.array(df_relevant['Survived'])
         df_relevant = df_relevant.drop('Survived', 1)
         X = np.array(df_relevant)
         train_X, test_X, train_y, test_y = train_test_split(X, y, test_size=0.3, random_state=42)
-        rf = RandomForestClassifier(n_estimators=1000, random_state=42)
+        rf = RandomForestClassifier(n_estimators=1000)
         rf.fit(train_X, train_y)
         predictions = rf.predict(test_X)
         errors = abs(predictions - test_y)
@@ -96,8 +98,25 @@ class Titanic:
             pickle.dump(rf, f)
 
     def prepare_data(self, df):
-        x = df.drop('PassengerId', 1).drop('Name', 1).drop('Ticket', 1).drop('Cabin', 1).drop('Age', 1)
+        x = df
+
+        x['Pclass'] = x['Pclass'].astype('category')
+
+        x['CabinFirst'] = x['Cabin'].astype(str).str[0]
+
+        x = df.drop('PassengerId', 1).drop('Name', 1).drop('Ticket', 1).drop('Cabin', 1)
+
+        x['AgeIndication'] = np.where(x['Age'].isnull(), 1, 0)
+        x['Age'] = np.where(x['Age'].isnull(), x['Age'].mean(), x['Age'])
+        x['Age'] = (x['Age'] - x['Age'].mean()) / x['Age'].std()
+
+        x['Fare'] = (x['Fare'] - x['Fare'].mean()) / x['Fare'].std()
         x = pd.get_dummies(x)
+
+        if 'CabinFirst_T' in x:
+            x = x.drop('CabinFirst_T', 1)
+
+        print(x.head(n=5))
         return x
 
     def predict_submission(self):
@@ -124,5 +143,5 @@ t = Titanic()
 # t.hex()
 # t.pair_plot()
 # t.two_flavors_hist()
-# t.random_forest()
+t.random_forest()
 t.predict_submission()
