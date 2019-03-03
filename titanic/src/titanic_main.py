@@ -6,17 +6,17 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
 
 TEST_PATH = '../data/test.csv'
 TRAIN_PATH = '../data/train.csv'
-MODEL_PATH = '../output/model.dat'
+MODEL_PATH = '../output/model_{}.dat'
 SUBMISSION_PATH = '../output/my_submission.csv'
 
 
 def debug(msg):
-    print("{} ===>\n{}".format(datetime.now(), msg))
+    print("{} ===> {}".format(datetime.now(), msg))
 
 
 class Titanic:
@@ -27,6 +27,10 @@ class Titanic:
         pd.set_option('display.width', 1000)
         self.use_columns = ['Sex', 'Age', 'Survived', 'Pclass', 'SibSp', 'Parch', 'Fare', 'Embarked']
         self.use_columns_numeric = ['Age', 'Survived', 'Pclass', 'SibSp', 'Parch', 'Fare']
+        self.train_X = None
+        self.test_X = None
+        self.train_y = None
+        self.test_y = None
 
     def general(self):
         debug("general")
@@ -80,23 +84,6 @@ class Titanic:
         plt.legend(['Died', 'Survived'])
         fig.savefig("../output/two_flavor_hist_{}.png".format(c))
 
-    def random_forest(self):
-        debug("training")
-        df_relevant = self.prepare_data(self.df)
-
-        df_relevant = df_relevant.reindex(np.random.permutation(df_relevant.index))
-        y = np.array(df_relevant['Survived'])
-        df_relevant = df_relevant.drop('Survived', 1)
-        X = np.array(df_relevant)
-        train_X, test_X, train_y, test_y = train_test_split(X, y, test_size=0.3, random_state=42)
-        rf = RandomForestClassifier(n_estimators=1000)
-        rf.fit(train_X, train_y)
-        predictions = rf.predict(test_X)
-        errors = abs(predictions - test_y)
-        debug('Mean Absolute Error: {}'.format(np.mean(errors)))
-        with open(MODEL_PATH, 'wb') as f:
-            pickle.dump(rf, f)
-
     def prepare_data(self, df):
         x = df
 
@@ -116,12 +103,40 @@ class Titanic:
         if 'CabinFirst_T' in x:
             x = x.drop('CabinFirst_T', 1)
 
-        print(x.head(n=5))
+        x = x.drop("Sex_male", 1)
+
+        # print(x.head(n=5))
         return x
 
-    def predict_submission(self):
+    def prepare_and_split(self):
+        if self.train_X is None:
+            df_relevant = self.prepare_data(self.df)
+
+            debug("splitting")
+            df_relevant = df_relevant.reindex(np.random.permutation(df_relevant.index))
+            y = np.array(df_relevant['Survived'])
+            df_relevant = df_relevant.drop('Survived', 1)
+            X = np.array(df_relevant)
+            self.train_X, self.test_X, self.train_y, self.test_y = train_test_split(X, y, test_size=0.3,
+                                                                                    random_state=42)
+        return self.train_X, self.test_X, self.train_y, self.test_y
+
+    def run_model(self, name, model):
+        train_X, test_X, train_y, test_y = self.prepare_and_split()
+
+        debug("checking mode {}".format(name))
+        model.fit(train_X, train_y)
+        predictions = model.predict(test_X)
+        errors = abs(predictions - test_y)
+        errors = np.mean(errors)
+        debug('Mean Absolute Error for {} is {}'.format(name, errors))
+        with open(MODEL_PATH.format(name), 'wb') as f:
+            pickle.dump(model, f)
+        return errors
+
+    def predict_submission(self, name):
         debug("predict start")
-        with open(MODEL_PATH, 'rb') as f:
+        with open(MODEL_PATH.format(name), 'rb') as f:
             rf = pickle.load(f)
         df = pd.read_csv(TEST_PATH)
         prepared = self.prepare_data(df)
@@ -136,6 +151,23 @@ class Titanic:
         submission.index += 892
         submission.to_csv(SUBMISSION_PATH, header=True, index=True)
 
+    def svc_tune(self):
+        errors = {}
+        # for kernel in ['linear', 'rbf', 'poly']:
+        for kernel in ['rbf', 'poly']:
+            # for gamma in [0.01, 0.1, 1, 10, 100]:
+            for gamma in [0.001, 0.01, 0.1]:
+                for c in [0.1, 1, 10, 100, 1000]:
+                    if (kernel != 'poly' or gamma < 10) and \
+                            (kernel != 'linear' or c != 1000) and \
+                            (kernel != 'poly' or c < 100):
+                        key = "svc_{}_gamma_{}_c_{}".format(kernel, gamma, c)
+                        error = t.run_model(key, SVC(kernel=kernel, gamma=gamma, C=c))
+                        errors[key] = error
+
+        for key in sorted(errors, key=errors.get, reverse=True):
+            print("{} : {}".format(key, errors[key]))
+
 
 t = Titanic()
 # t.general()
@@ -143,5 +175,14 @@ t = Titanic()
 # t.hex()
 # t.pair_plot()
 # t.two_flavors_hist()
-t.random_forest()
-t.predict_submission()
+# t.run_model("random_forest", RandomForestClassifier(n_estimators=1000))
+# t.run_model("gnb", GaussianNB())
+# t.run_model("knn", KNeighborsClassifier())
+# t.run_model("mnb", MultinomialNB())
+# t.run_model("bnb", BernoulliNB())
+# t.run_model("lr", LogisticRegression())
+# t.run_model("sdg", SGDClassifier())
+# t.run_model("lsvc", LinearSVC())
+# t.run_model("nsvc", NuSVC())
+# t.svc_tune()
+t.predict_submission("svc_rbf_gamma_0.1_c_1")
