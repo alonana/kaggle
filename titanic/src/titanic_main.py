@@ -7,7 +7,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
 from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC
+from sklearn.svm import SVC, NuSVC
 
 TEST_PATH = '../data/test.csv'
 TRAIN_PATH = '../data/train.csv'
@@ -90,23 +90,45 @@ class Titanic:
         x['Pclass'] = x['Pclass'].astype('category')
 
         x['CabinFirst'] = x['Cabin'].astype(str).str[0]
+        x['CabinBCDEF'] = np.where((x['CabinFirst'] == 'B') | (x['CabinFirst'] == 'C') | (x['CabinFirst'] == 'D') | (
+                x['CabinFirst'] == 'E') | (x['CabinFirst'] == 'F'), 1, 0)
 
-        x = df.drop('PassengerId', 1).drop('Name', 1).drop('Ticket', 1).drop('Cabin', 1)
-
+        x['Infant'] = np.where(x['Age'] < 7, 1, 0)
         x['AgeIndication'] = np.where(x['Age'].isnull(), 1, 0)
         x['Age'] = np.where(x['Age'].isnull(), x['Age'].mean(), x['Age'])
         x['Age'] = (x['Age'] - x['Age'].mean()) / x['Age'].std()
 
         x['Fare'] = (x['Fare'] - x['Fare'].mean()) / x['Fare'].std()
+
+        x = x.drop('PassengerId', 1)
+        x = x.drop('Name', 1)
+        x = x.drop('Ticket', 1)
+        x = x.drop('Cabin', 1)
+        x = x.drop('CabinFirst', 1)
+        x = x.drop('Age', 1)
+
         x = pd.get_dummies(x)
 
         if 'CabinFirst_T' in x:
             x = x.drop('CabinFirst_T', 1)
-
         x = x.drop("Sex_male", 1)
-
-        # print(x.head(n=5))
+        x = x.drop("Pclass_3", 1)
+        x = x.drop("Embarked_Q", 1)
+        x = x.drop("Embarked_S", 1)
         return x
+
+    def investigate(self):
+        x = self.df
+        # x['CabinFirst'] = x['Cabin'].astype(str).str[0]
+        # print(x.head(5))
+        fig, ax = plt.subplots()
+        # ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        # ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        # x.groupby(['Survived'])['CabinFirst'].plot.hist(ax=ax, alpha=0.5)
+        x.groupby(['Embarked', 'Survived']).CabinFirst.count().unstack().plot.bar(ax=ax, legend=True)
+        plt.title("investigate")
+        plt.legend(['Died', 'Survived'])
+        fig.savefig("../output/investigate.png")
 
     def prepare_and_split(self):
         if self.train_X is None:
@@ -117,8 +139,8 @@ class Titanic:
             y = np.array(df_relevant['Survived'])
             df_relevant = df_relevant.drop('Survived', 1)
             X = np.array(df_relevant)
-            self.train_X, self.test_X, self.train_y, self.test_y = train_test_split(X, y, test_size=0.3,
-                                                                                    random_state=42)
+            self.train_X, self.test_X, self.train_y, self.test_y = \
+                train_test_split(X, y, test_size=0.3, random_state=42)
         return self.train_X, self.test_X, self.train_y, self.test_y
 
     def run_model(self, name, model):
@@ -183,6 +205,8 @@ t = Titanic()
 # t.run_model("lr", LogisticRegression())
 # t.run_model("sdg", SGDClassifier())
 # t.run_model("lsvc", LinearSVC())
-# t.run_model("nsvc", NuSVC())
+t.run_model("nsvc", NuSVC())
+# t.run_model("nsvc", SVC())
 # t.svc_tune()
-t.predict_submission("svc_rbf_gamma_0.1_c_1")
+# t.investigate()
+t.predict_submission("nsvc")
