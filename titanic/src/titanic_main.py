@@ -6,8 +6,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC, NuSVC
+from sklearn.svm import SVC
 
 TEST_PATH = '../data/test.csv'
 TRAIN_PATH = '../data/train.csv'
@@ -71,50 +72,84 @@ class Titanic:
         fig.savefig("../output/hex_Survived_{}.png".format(c))
 
     def two_flavors_hist(self):
-        for c in self.use_columns_numeric:
+        for c in self.use_columns:
             self.two_flavors_hist_for_column(c)
 
     def two_flavors_hist_for_column(self, c):
-        debug("two flavor hist for {}".format(c))
-        fig, ax = plt.subplots()
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        self.df.groupby(['Survived'])[c].plot.hist(ax=ax, alpha=0.5)
-        plt.title(c)
-        plt.legend(['Died', 'Survived'])
-        fig.savefig("../output/two_flavor_hist_{}.png".format(c))
+        if c in ['Sex', 'Embarked']:
+            debug("two flavor bar for {}".format(c))
+            fig, ax = plt.subplots()
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            self.df.groupby([c, 'Survived'])[c].count().unstack().plot.bar(ax=ax, legend=True)
+            plt.title(c)
+            plt.legend(['Died', 'Survived'])
+            fig.savefig("../output/two_flavor_bar_{}.png".format(c))
+        else:
+            debug("two flavor hist for {}".format(c))
+            fig, ax = plt.subplots()
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            x = self.df
+            bins = 10
+            if c in ['Age', 'Fare']:
+                bins = 40
+            if c == 'Fare':
+                selection = x['Fare'] < 100
+                x = x[selection]
+            x.groupby(['Survived'])[c].plot.hist(ax=ax, alpha=0.5, bins=bins)
+            plt.title(c)
+            plt.legend(['Died', 'Survived'])
+            fig.savefig("../output/two_flavor_hist_{}.png".format(c))
 
     def prepare_data(self, df):
         x = df
 
         x['Pclass'] = x['Pclass'].astype('category')
 
+        x['Female'] = np.where(x['Sex'] == 'female', 1, 0)
+
         x['CabinFirst'] = x['Cabin'].astype(str).str[0]
-        x['CabinBCDEF'] = np.where((x['CabinFirst'] == 'B') | (x['CabinFirst'] == 'C') | (x['CabinFirst'] == 'D') | (
-                x['CabinFirst'] == 'E') | (x['CabinFirst'] == 'F'), 1, 0)
+        x['CabinBCDEF'] = np.where(
+            (x['CabinFirst'] == 'B') |
+            (x['CabinFirst'] == 'C') |
+            (x['CabinFirst'] == 'D') |
+            (x['CabinFirst'] == 'E') |
+            (x['CabinFirst'] == 'F'), 1, 0)
 
-        x['Infant'] = np.where(x['Age'] < 7, 1, 0)
-        x['AgeIndication'] = np.where(x['Age'].isnull(), 1, 0)
-        x['Age'] = np.where(x['Age'].isnull(), x['Age'].mean(), x['Age'])
-        x['Age'] = (x['Age'] - x['Age'].mean()) / x['Age'].std()
+        x['Age0_6'] = np.where(x['Age'] < 7, 1, 0)
+        x['Age12_15'] = np.where((x['Age'] >= 12) & (x['Age'] <= 15), 1, 0)
+        x['Age32_35'] = np.where((x['Age'] >= 32) & (x['Age'] <= 35), 1, 0)
+        x['Age52_53'] = np.where((x['Age'] >= 52) & (x['Age'] <= 53), 1, 0)
+        x['Age75'] = np.where(x['Age'] > 75, 1, 0)
 
-        x['Fare'] = (x['Fare'] - x['Fare'].mean()) / x['Fare'].std()
+        x['Fare30'] = np.where(x['Fare'] < 30, 1, 0)
+
+        x['SibSp0'] = np.where(x['SibSp'] == 0, 1, 0)
+        x['SibSp1'] = np.where(x['SibSp'] == 1, 1, 0)
+        x['SibSp2'] = np.where(x['SibSp'] == 2, 1, 0)
+        x['SibOther'] = np.where(x['SibSp'] > 2, 1, 0)
+
+        x['Parch0'] = np.where(x['Parch'] == 0, 1, 0)
+        x['Parch1'] = np.where(x['Parch'] == 1, 1, 0)
+        x['Parch2'] = np.where(x['Parch'] == 2, 1, 0)
+        x['Parch3'] = np.where(x['Parch'] == 3, 1, 0)
+        x['ParchOther'] = np.where(x['Parch'] > 3, 1, 0)
 
         x = x.drop('PassengerId', 1)
         x = x.drop('Name', 1)
+        x = x.drop('Sex', 1)
         x = x.drop('Ticket', 1)
         x = x.drop('Cabin', 1)
         x = x.drop('CabinFirst', 1)
         x = x.drop('Age', 1)
+        x = x.drop('Fare', 1)
+        x = x.drop('SibSp', 1)
+        x = x.drop('Parch', 1)
 
         x = pd.get_dummies(x)
 
-        if 'CabinFirst_T' in x:
-            x = x.drop('CabinFirst_T', 1)
-        x = x.drop("Sex_male", 1)
-        x = x.drop("Pclass_3", 1)
-        x = x.drop("Embarked_Q", 1)
-        x = x.drop("Embarked_S", 1)
+        print(x.head(10))
         return x
 
     def investigate(self):
@@ -163,10 +198,6 @@ class Titanic:
         df = pd.read_csv(TEST_PATH)
         prepared = self.prepare_data(df)
 
-        fare = prepared['Fare']
-        mean = fare.mean()
-        prepared['Fare'] = fare.fillna(mean)
-
         predictions = rf.predict(prepared)
         submission = pd.DataFrame(data={"Survived": predictions})
         submission.index.names = ['PassengerId']
@@ -197,7 +228,7 @@ t = Titanic()
 # t.hex()
 # t.pair_plot()
 # t.two_flavors_hist()
-# t.run_model("random_forest", RandomForestClassifier(n_estimators=1000))
+t.run_model("random_forest", RandomForestClassifier(n_estimators=1000))
 # t.run_model("gnb", GaussianNB())
 # t.run_model("knn", KNeighborsClassifier())
 # t.run_model("mnb", MultinomialNB())
@@ -205,8 +236,9 @@ t = Titanic()
 # t.run_model("lr", LogisticRegression())
 # t.run_model("sdg", SGDClassifier())
 # t.run_model("lsvc", LinearSVC())
-t.run_model("nsvc", NuSVC())
+# t.run_model("nsvc", NuSVC())
 # t.run_model("nsvc", SVC())
-# t.svc_tune()
+t.svc_tune()
 # t.investigate()
-t.predict_submission("nsvc")
+# t.predict_submission("random_forest")
+t.predict_submission("svc_rbf_gamma_0.1_c_10")
