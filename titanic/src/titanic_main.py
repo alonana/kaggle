@@ -1,3 +1,4 @@
+import io
 import pickle
 from datetime import datetime
 
@@ -6,15 +7,16 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
+from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 
 TEST_PATH = '../data/test.csv'
 TRAIN_PATH = '../data/train.csv'
-MODEL_PATH = '../output/model_{}.dat'
+MODEL_PATH = '../model/{}.dat'
 SUBMISSION_PATH = '../output/my_submission.csv'
 
-SEED = 42
+SEED = 432
 
 
 def debug(msg):
@@ -32,10 +34,20 @@ class Titanic:
 
     def general(self):
         debug("general")
+
         with open("../output/head.txt", "w") as file:
             file.write(str(self.df.head()))
+
         with open("../output/desc.txt", "w") as file:
             file.write(str(self.df.describe()))
+
+        with open("../output/desc_objects.txt", "w") as file:
+            file.write(str(self.df.describe(include='O')))
+
+        buf = io.StringIO()
+        self.df.info(buf=buf)
+        with open("../output/info.txt", "w") as file:
+            file.write(buf.getvalue())
 
     def hist(self):
         for c in self.use_columns_numeric:
@@ -120,7 +132,8 @@ class Titanic:
         x['Age52_53'] = np.where((x['Age'] >= 52) & (x['Age'] <= 53), 1, 0)
         x['Age75'] = np.where(x['Age'] > 75, 1, 0)
 
-        x['Fare30'] = np.where(x['Fare'] < 30, 1, 0)
+        x['Fare0_30'] = np.where(x['Fare'] < 30, 1, 0)
+        x['Fare_over_50'] = np.where(x['Fare'] > 50, 1, 0)
 
         x['SibSp0'] = np.where(x['SibSp'] == 0, 1, 0)
         x['SibSp1'] = np.where(x['SibSp'] == 1, 1, 0)
@@ -144,23 +157,37 @@ class Titanic:
         x = x.drop('SibSp', 1)
         x = x.drop('Parch', 1)
 
+        x = x.drop('Parch3', 1)
+        x = x.drop('Age52_53', 1)
+        x = x.drop('Age75', 1)
+        x = x.drop('ParchOther', 1)
+        x = x.drop('SibSp2', 1)
+
         x = pd.get_dummies(x)
 
-        print(x.head(10))
         return x
 
-    def investigate(self):
+    def hist_by_cabin_first(self):
         x = self.df
-        # x['CabinFirst'] = x['Cabin'].astype(str).str[0]
-        # print(x.head(5))
+        x['CabinFirst'] = x['Cabin'].astype(str).str[0]
         fig, ax = plt.subplots()
-        # ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        # ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        # x.groupby(['Survived'])['CabinFirst'].plot.hist(ax=ax, alpha=0.5)
-        x.groupby(['Embarked', 'Survived']).CabinFirst.count().unstack().plot.bar(ax=ax, legend=True)
-        plt.title("investigate")
+        x.groupby(['CabinFirst', 'Survived']).CabinFirst.count().unstack().plot.bar(ax=ax, legend=True)
+        plt.title("survived by cabin")
         plt.legend(['Died', 'Survived'])
-        fig.savefig("../output/investigate.png")
+        fig.savefig("../output/survived_by_cabin.png")
+
+    def confusion_matrix_plot(self, predictions, prepared):
+        cm = confusion_matrix(prepared['Survived'], predictions)
+        debug("confusion matrix: {}".format(cm))
+        fig, ax = plt.subplots()
+        sns.heatmap(cm, annot=True, ax=ax, fmt='g')
+        ax.set_xlabel('Predicted labels')
+        ax.set_ylabel('True labels')
+        ax.set_title('Confusion Matrix')
+        labels = ['Died', 'Survived']
+        ax.xaxis.set_ticklabels(labels)
+        ax.yaxis.set_ticklabels(labels)
+        fig.savefig("../output/confusion_matrix.png")
 
     def check_predictions(self, name):
         debug("check predict start")
@@ -170,17 +197,23 @@ class Titanic:
 
         predictions = model.predict(prepared.drop('Survived', 1))
 
+        self.confusion_matrix_plot(predictions, prepared)
+
         correct = prepared[prepared['Survived'] == predictions]
         total = prepared.shape[0]
         amount = correct.shape[0]
-        debug("correct {} / {} = {}\n{}".format(amount, total, amount / total, correct.head()))
+        debug("correct {} / {} = {}".format(amount, total, amount / total))
 
         wrong = prepared[prepared['Survived'] != predictions]
         total = prepared.shape[0]
         amount = wrong.shape[0]
-        debug("wrong {} / {} = {}\n{}".format(amount, total, amount / total, wrong.head(100)))
+        debug("wrong {} / {} = {}".format(amount, total, amount / total))
 
-    def run_model(self, name, model):
+        false_negative = wrong[wrong['Survived'] == 1]
+        debug("false negative {}".format(false_negative.shape[0]))
+        print(false_negative)
+
+    def run_model(self, name, model, test_size=0.3):
         df_relevant = self.prepare_data(self.df)
 
         debug("splitting")
@@ -190,18 +223,24 @@ class Titanic:
 
         X = np.array(df_relevant)
         train_X, test_X, train_y, test_y = \
-            train_test_split(X, y, test_size=0.3, random_state=SEED)
+            train_test_split(X, y, test_size=test_size, random_state=SEED)
 
-        debug("checking mode {}".format(name))
+        debug("fit model {}".format(name))
         model.fit(train_X, train_y)
-        predictions = model.predict(test_X)
-        errors = abs(predictions - test_y)
-        errors = np.mean(errors)
-        debug('Mean Absolute Error for {} is {}'.format(name, errors))
+
+        if test_size > 0:
+            score = model.score(test_X, test_y)
+            debug("model {} score: {}".format(name, score))
+            importance = pd.DataFrame(model.feature_importances_, index=df_relevant.columns, columns=['importance'])
+            importance = importance.sort_values('importance', ascending=False)
+            debug("importance {}".format(importance))
+        else:
+            score = None
+
         with open(MODEL_PATH.format(name), 'wb') as f:
             pickle.dump(model, f)
 
-        return errors
+        return score
 
     def predict_submission(self, name):
         debug("predict start")
@@ -233,6 +272,14 @@ class Titanic:
         for key in sorted(errors, key=errors.get, reverse=True):
             print("{} : {}".format(key, errors[key]))
 
+    def factor_plot(self):
+        x = self.df
+        fig, ax = plt.subplots()
+        sns.factorplot(x='Pclass', y='Survived', hue='Sex', data=x, ax=ax)
+        plt.title("survived by cabin")
+        plt.legend(['Died', 'Survived'])
+        fig.savefig("../output/factor.png")
+
 
 t = Titanic()
 # t.general()
@@ -240,7 +287,7 @@ t = Titanic()
 # t.hex()
 # t.pair_plot()
 # t.two_flavors_hist()
-# t.run_model("random_forest", RandomForestClassifier(n_estimators=1000, random_state=SEED))
+# t.run_model("random_forest", RandomForestClassifier(n_estimators=300, random_state=SEED))
 # t.run_model("gnb", GaussianNB())
 # t.run_model("knn", KNeighborsClassifier())
 # t.run_model("mnb", MultinomialNB())
@@ -251,6 +298,8 @@ t = Titanic()
 # t.run_model("nsvc", NuSVC())
 # t.run_model("nsvc", SVC())
 # t.svc_tune()
-# t.investigate()
+# t.hist_by_cabin_first()
+t.factor_plot()
+# t.run_model("random_forest", RandomForestClassifier(n_estimators=300, random_state=SEED), test_size=0)
 # t.predict_submission("random_forest")
-t.check_predictions("random_forest")
+# t.check_predictions("random_forest")
