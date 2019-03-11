@@ -51,6 +51,13 @@ class Titanic:
         with open("../output/info.txt", "w") as file:
             file.write(buf.getvalue())
 
+    def check_cabin(self):
+        cabins = {}
+        for cabin, count in self.df.Cabin.value_counts().iteritems():
+            cabins[cabin] = count
+        print(cabins)
+
+
     def hist(self):
         for c in self.use_columns_numeric:
             self.hist_for_column(self.df, c)
@@ -307,4 +314,5 @@ t = Titanic()
 # t.factor_plot(t.df)
 # t.train_model("random_forest", RandomForestClassifier(n_estimators=300, random_state=SEED), test_size=0)
 # t.predict_submission("random_forest")
-t.check_predictions("random_forest")
+# t.check_predictions("random_forest")
+t.check_cabin()
