@@ -8,8 +8,9 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import rcParams
 from matplotlib.ticker import MaxNLocator
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.svm import SVC
 
 TEST_PATH = '../data/test.csv'
@@ -17,7 +18,7 @@ TRAIN_PATH = '../data/train.csv'
 MODEL_PATH = '../model/{}.dat'
 SUBMISSION_PATH = '../output/my_submission.csv'
 
-SEED = 432
+SEED = 42
 
 
 def debug(msg):
@@ -51,12 +52,18 @@ class Titanic:
         with open("../output/info.txt", "w") as file:
             file.write(buf.getvalue())
 
-    def check_cabin(self):
+    def add_cabin_occupy(self, df):
         cabins = {}
-        for cabin, count in self.df.Cabin.value_counts().iteritems():
+        for cabin, count in df.Cabin.value_counts().iteritems():
             cabins[cabin] = count
-        print(cabins)
 
+        name = 'CabinOccupy'
+        df[name] = self.df.apply(lambda r: cabins.get(r.Cabin, None), axis=1)
+        df[name] = df[name].astype('category')
+
+        return df
+
+        # self.two_flavors_hist_for_column(self.df,'CabinOccupy')
 
     def hist(self):
         for c in self.use_columns_numeric:
@@ -80,7 +87,7 @@ class Titanic:
         for c in self.use_columns:
             self.two_flavors_hist_for_column(df, c, prefix)
 
-    def two_flavors_hist_for_column(self, df, c, prefix):
+    def two_flavors_hist_for_column(self, df, c, prefix=""):
         if c in ['Sex', 'Embarked', 'combined']:
             debug("two flavor bar for {}".format(c))
             fig, ax = plt.subplots()
@@ -109,6 +116,7 @@ class Titanic:
 
     def prepare_data(self, df):
         x = df
+        x = self.add_cabin_occupy(x)
 
         x['Female'] = np.where(x['Sex'] == 'female', 1, 0)
 
@@ -163,6 +171,9 @@ class Titanic:
         x['Pclass'] = x['Pclass'].astype('category')
 
         x = pd.get_dummies(x)
+
+        if 'CabinOccupy_4.0' in x:
+            x = x.drop('CabinOccupy_4.0', 1)
 
         return x
 
@@ -254,6 +265,30 @@ class Titanic:
 
         return score
 
+    def model_hyperspace(self, model, hyperspace_params):
+        df_relevant = self.prepare_data(self.df)
+
+        debug("splitting")
+        df_relevant = df_relevant.reindex(np.random.RandomState(seed=SEED).permutation(df_relevant.index))
+        y = np.array(df_relevant['Survived'])
+        df_relevant = df_relevant.drop('Survived', 1)
+
+        X = np.array(df_relevant)
+
+        search = GridSearchCV(estimator=model, param_grid=hyperspace_params, cv=5, verbose=10)
+        search.fit(X, y)
+        debug(search.best_params_)
+
+    def random_forest_hyperspace(self):
+        hyperspace_params = {
+            'n_estimators': [100, 200, 300, 400, 500],
+            'max_features': ['auto', 'sqrt', 'log2'],
+            'max_depth': [4, 5, 6, 7, 8],
+            'criterion': ['gini', 'entropy']
+        }
+        self.model_hyperspace(RandomForestClassifier(random_state=SEED), hyperspace_params)
+        # {'criterion': 'entropy', 'max_depth': 5, 'max_features': 'auto', 'n_estimators': 100}
+
     def predict_submission(self, name):
         debug("predict start")
         with open(MODEL_PATH.format(name), 'rb') as f:
@@ -299,7 +334,6 @@ t = Titanic()
 # t.hex()
 # t.pair_plot()
 # t.two_flavors_hist(t.df)
-# t.train_model("random_forest", RandomForestClassifier(n_estimators=300, random_state=SEED))
 # t.train_model("gnb", GaussianNB())
 # t.train_model("knn", KNeighborsClassifier())
 # t.train_model("mnb", MultinomialNB())
@@ -313,6 +347,11 @@ t = Titanic()
 # t.hist_by_cabin_first()
 # t.factor_plot(t.df)
 # t.train_model("random_forest", RandomForestClassifier(n_estimators=300, random_state=SEED), test_size=0)
-# t.predict_submission("random_forest")
 # t.check_predictions("random_forest")
-t.check_cabin()
+
+
+# t.random_forest_hyperspace()
+t.train_model("random_forest",
+              RandomForestClassifier(criterion='entropy', max_depth=5, max_features='auto', n_estimators=100,
+                                     random_state=SEED), test_size=0)
+t.predict_submission("random_forest")
