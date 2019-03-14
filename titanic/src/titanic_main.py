@@ -38,19 +38,25 @@ class Titanic:
     def general(self):
         debug("general")
 
-        with open("../output/head.txt", "w") as file:
+        with open("../output/general/head.txt", "w") as file:
             file.write(str(self.df.head()))
 
-        with open("../output/desc.txt", "w") as file:
+        with open("../output/general/desc.txt", "w") as file:
             file.write(str(self.df.describe()))
 
-        with open("../output/desc_objects.txt", "w") as file:
+        with open("../output/general/desc_objects.txt", "w") as file:
             file.write(str(self.df.describe(include='O')))
 
         buf = io.StringIO()
         self.df.info(buf=buf)
-        with open("../output/info.txt", "w") as file:
+        with open("../output/general/info.txt", "w") as file:
             file.write(buf.getvalue())
+
+        self.df.groupby('Pclass').mean().to_csv("../output/general/mean_by_pclass.csv")
+        self.df.groupby(['Pclass', 'Sex']).mean().to_csv("../output/general/mean_by_pclass_and_sex.csv")
+
+        group_by_age = pd.cut(self.df["Age"], np.arange(0, 90, 10))
+        self.df.groupby(group_by_age).mean().to_csv("../output/general/mean_by_age_cut.csv")
 
     def add_cabin_occupy(self, df):
         cabins = {}
@@ -129,13 +135,16 @@ class Titanic:
             (x['CabinFirst'] == 'F'), 1, 0)
 
         x['Age0_6'] = np.where(x['Age'] < 7, 1, 0)
+        x['Age7_11'] = np.where((x['Age'] >= 7) & (x['Age'] <= 11), 1, 0)
         x['Age12_15'] = np.where((x['Age'] >= 12) & (x['Age'] <= 15), 1, 0)
         x['Age32_35'] = np.where((x['Age'] >= 32) & (x['Age'] <= 35), 1, 0)
-        x['Age52_53'] = np.where((x['Age'] >= 52) & (x['Age'] <= 53), 1, 0)
-        x['Age75'] = np.where(x['Age'] > 75, 1, 0)
+        x['Age52_60'] = np.where((x['Age'] >= 52) & (x['Age'] <= 60), 1, 0)
+        x['Age61Up'] = np.where(x['Age'] >= 61, 1, 0)
 
-        x['Fare0_30'] = np.where(x['Fare'] < 30, 1, 0)
-        x['Fare_over_50'] = np.where(x['Fare'] > 50, 1, 0)
+        x['Fare0_7'] = np.where(x['Fare'] <= 7, 1, 0)
+        x['Fare_8_20'] = np.where((x['Fare'] >= 8) & (x['Fare'] <= 20), 1, 0)
+        x['Fare_21_40'] = np.where((x['Fare'] >= 21) & (x['Fare'] <= 40), 1, 0)
+        x['Fare_41Up'] = np.where(x['Fare'] >= 41, 1, 0)
 
         x['SibSp0'] = np.where(x['SibSp'] == 0, 1, 0)
         x['SibSp1'] = np.where(x['SibSp'] == 1, 1, 0)
@@ -151,6 +160,16 @@ class Titanic:
         x['MalePclass3'] = np.where((x['Pclass'] == 3) & (x['Sex'] == 'male'), 1, 0)
         x['FemalePclass1'] = np.where((x['Pclass'] == 1) & (x['Sex'] == 'female'), 1, 0)
 
+        x['Title'] = x.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
+        values = ['Mr', 'Miss', 'Mrs', 'Master']
+        x['Title'] = np.where(x['Title'].isin(values), x['Title'], 'Other')
+
+        x['family'] = x['SibSp'] + x['Parch']
+        x['family0'] = np.where(x['family'] == 0, 1, 0)
+        x['family1_3'] = np.where((x['family'] >= 1) & (x['family'] <= 3), 1, 0)
+        x['family4up'] = np.where(x['family'] >= 4, 1, 0)
+
+        x = x.drop('family', 1)
         x = x.drop('PassengerId', 1)
         x = x.drop('Name', 1)
         x = x.drop('Sex', 1)
@@ -163,12 +182,8 @@ class Titanic:
         x = x.drop('Parch', 1)
 
         x = x.drop('Parch3', 1)
-        x = x.drop('Age52_53', 1)
-        x = x.drop('Age75', 1)
         x = x.drop('ParchOther', 1)
         x = x.drop('SibSp2', 1)
-
-        x['Pclass'] = x['Pclass'].astype('category')
 
         x = pd.get_dummies(x)
 
@@ -327,6 +342,27 @@ class Titanic:
         plt.legend(['Died', 'Survived'])
         fig.savefig("../output/{}factor.png".format(prefix))
 
+    def extract_title(self):
+        x = self.df
+        x['Title'] = x.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
+        values = ['Mr', 'Miss', 'Mrs', 'Master']
+        x['Title'] = np.where(x['Title'].isin(values), x['Title'], 'Other')
+        debug(x['Title'])
+
+    def hist_per_category(self, df, category, column):
+        fig, ax = plt.subplots()
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+        category_values = df[category].unique()
+        plt.hist([df.loc[df[category] == y, column] for y in category_values], label=category_values, bins=11)
+
+        fig.savefig("../output/hist_{}_per_{}.png".format(column, category))
+
+    def extract_family(self):
+        x = self.df
+        x['family'] = x['SibSp'] + x['Parch']
+        self.hist_per_category(x, 'Survived', 'family')
 
 t = Titanic()
 # t.general()
@@ -346,12 +382,19 @@ t = Titanic()
 # t.svc_tune()
 # t.hist_by_cabin_first()
 # t.factor_plot(t.df)
-# t.train_model("random_forest", RandomForestClassifier(n_estimators=300, random_state=SEED), test_size=0)
+# t.extract_title()
+# t.extract_family()
+
+classifier = RandomForestClassifier(criterion='entropy',
+                                    max_depth=5,
+                                    max_features='auto',
+                                    n_estimators=500,
+                                    random_state=SEED)
+
+# t.train_model("random_forest", classifier, test_size=0.3)
 # t.check_predictions("random_forest")
 
 
 # t.random_forest_hyperspace()
-t.train_model("random_forest",
-              RandomForestClassifier(criterion='entropy', max_depth=5, max_features='auto', n_estimators=100,
-                                     random_state=SEED), test_size=0)
+t.train_model("random_forest", classifier, test_size=0)
 t.predict_submission("random_forest")
