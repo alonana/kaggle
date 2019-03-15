@@ -8,7 +8,8 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import rcParams
 from matplotlib.ticker import MaxNLocator
-from sklearn.ensemble import RandomForestClassifier
+from sklearn import metrics
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.svm import SVC
@@ -121,8 +122,11 @@ class Titanic:
             fig.savefig("../output/{}two_flavor_hist_{}.png".format(prefix, c))
 
     def prepare_data(self, df):
-        x = df
+        x = df.copy()
         x = self.add_cabin_occupy(x)
+        debug(x.head(100))
+        x = self.age_regression(x)
+        debug(x.head(100))
 
         x['Female'] = np.where(x['Sex'] == 'female', 1, 0)
 
@@ -356,6 +360,8 @@ class Titanic:
 
         category_values = df[category].unique()
         plt.hist([df.loc[df[category] == y, column] for y in category_values], label=category_values, bins=11)
+        ax.legend()
+        plt.title("{} histogram by {}".format(column, category))
 
         fig.savefig("../output/hist_{}_per_{}.png".format(column, category))
 
@@ -363,6 +369,49 @@ class Titanic:
         x = self.df
         x['family'] = x['SibSp'] + x['Parch']
         self.hist_per_category(x, 'Survived', 'family')
+
+    def age_regression(self, df):
+        debug('Age regression')
+        x = df.copy()
+        x = x.dropna(subset=['Age'], how='any')
+        # debug(x.head())
+        x['Pclass'] = x['Pclass'].astype('category')
+        x['SibSp'] = x['SibSp'].astype('category')
+        x['Parch'] = x['Parch'].astype('category')
+        self.hist_per_category(x, 'Pclass', "Age")
+
+        # debug("pair plot")
+        # z = x.copy()[['Age','Fare']]
+        # sns.pairplot(z).fig.savefig("../output/age_fare_pair_plot.png")
+
+        y = x['Age']
+        X = x[['Pclass', 'Sex', 'SibSp', 'Parch']]
+        X = pd.get_dummies(X)
+
+        # debug(X.head())
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=SEED)
+        regressor = RandomForestRegressor(n_estimators=200, random_state=SEED)
+        regressor.fit(X_train, y_train)
+        importance = pd.DataFrame(regressor.feature_importances_, index=X.columns, columns=['importance'])
+        importance = importance.sort_values('importance', ascending=False)
+        # debug("importance {}".format(importance))
+        y_pred = regressor.predict(X_test)
+        print('Root Mean Squared Error:', np.sqrt(metrics.mean_squared_error(y_test, y_pred)))
+
+        full = df.copy()
+        full['Pclass'] = full['Pclass'].astype('category')
+        full['SibSp'] = full['SibSp'].astype('category')
+        full['Parch'] = full['Parch'].astype('category')
+        full = full[['Pclass', 'Sex', 'SibSp', 'Parch']]
+        full = pd.get_dummies(full)
+        full = full.drop('SibSp_8', 1)
+
+        # debug(full.head())
+        df['AgePredict'] = regressor.predict(full).astype('int')
+        df['Age'] = np.where(df['Age'].isnull(), df['AgePredict'], df['Age'])
+        return df
+
+
 
 t = Titanic()
 # t.general()
@@ -391,7 +440,7 @@ classifier = RandomForestClassifier(criterion='entropy',
                                     n_estimators=500,
                                     random_state=SEED)
 
-# t.train_model("random_forest", classifier, test_size=0.3)
+t.train_model("random_forest", classifier, test_size=0.3)
 # t.check_predictions("random_forest")
 
 
