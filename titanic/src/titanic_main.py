@@ -59,6 +59,8 @@ class Titanic:
         group_by_age = pd.cut(self.df["Age"], np.arange(0, 90, 10))
         self.df.groupby(group_by_age).mean().to_csv("../output/general/mean_by_age_cut.csv")
 
+        self.df.sort_values(by=['Fare'], ascending=False).to_csv("../output/general/sorted_fares.csv")
+
     def add_cabin_occupy(self, df):
         cabins = {}
         for cabin, count in df.Cabin.value_counts().iteritems():
@@ -113,9 +115,9 @@ class Titanic:
             bins = 10
             if c in ['Age', 'Fare']:
                 bins = 40
-            if c == 'Fare':
-                selection = x['Fare'] < 100
-                x = x[selection]
+            # if c == 'Fare':
+            #     selection = x['Fare'] < 100
+            #     x = x[selection]
             x.groupby(['Survived'])[c].plot.hist(ax=ax, alpha=0.5, bins=bins)
             plt.title(c)
             plt.legend(['Died', 'Survived'])
@@ -124,11 +126,13 @@ class Titanic:
     def prepare_data(self, df):
         x = df.copy()
         x = self.add_cabin_occupy(x)
-        debug(x.head(100))
+        # debug(x.head(100))
         x = self.age_regression(x)
-        debug(x.head(100))
+        # debug(x.head(100))
 
         x['Female'] = np.where(x['Sex'] == 'female', 1, 0)
+
+        x['Pclass'] = x['Pclass'].astype('category')
 
         x['CabinFirst'] = x['Cabin'].astype(str).str[0]
         x['CabinBCDEF'] = np.where(
@@ -148,7 +152,9 @@ class Titanic:
         x['Fare0_7'] = np.where(x['Fare'] <= 7, 1, 0)
         x['Fare_8_20'] = np.where((x['Fare'] >= 8) & (x['Fare'] <= 20), 1, 0)
         x['Fare_21_40'] = np.where((x['Fare'] >= 21) & (x['Fare'] <= 40), 1, 0)
-        x['Fare_41Up'] = np.where(x['Fare'] >= 41, 1, 0)
+        x['Fare_41_200'] = np.where((x['Fare'] >= 41) & (x['Fare'] <= 200), 1, 0)
+        x['Fare_201_300'] = np.where((x['Fare'] >= 201) & (x['Fare'] <= 300), 1, 0)
+        x['Fare_301Up'] = np.where(x['Fare'] >= 301, 1, 0)
 
         x['SibSp0'] = np.where(x['SibSp'] == 0, 1, 0)
         x['SibSp1'] = np.where(x['SibSp'] == 1, 1, 0)
@@ -219,15 +225,27 @@ class Titanic:
         fig.savefig("../output/confusion_matrix.png")
 
     def analyze_predictions_false_negative(self, x):
-        prefix = "FN_"
+        # prefix = "FN_"
         # self.two_flavors_hist(x, prefix=prefix)
         # self.hist_for_column(x, "Age", prefix)
-        y = self.df.copy()
-        combined = "combined"
-        x[combined] = x.apply(lambda row: "{}_{}_{}".format(row['Sex'], row['SibSp'], row['Parch']), axis=1)
-        y[combined] = y.apply(lambda row: "{}_{}_{}".format(row['Sex'], row['SibSp'], row['Parch']), axis=1)
-        self.two_flavors_hist_for_column(x, combined, "combined_fp_")
-        self.two_flavors_hist_for_column(y, combined, "combined_all_")
+        # y = self.df.copy()
+        # combined = "combined"
+        # x[combined] = x.apply(lambda row: "{}_{}_{}".format(row['Sex'], row['SibSp'], row['Parch']), axis=1)
+        # y[combined] = y.apply(lambda row: "{}_{}_{}".format(row['Sex'], row['SibSp'], row['Parch']), axis=1)
+        # self.two_flavors_hist_for_column(x, combined, "combined_fp_")
+        # self.two_flavors_hist_for_column(y, combined, "combined_all_")
+        x = x[(x.Sex == 'male') & (x.SibSp == 0) & (x.Parch == 0)]
+        x = x.drop('Sex', 1)
+        x = x.drop('SibSp', 1)
+        x = x.drop('Parch', 1)
+        x = x.drop('Survived', 1)
+        x = x.drop('PassengerId', 1)
+
+        z = self.df.copy()
+        z = z[(z.Sex == 'male') & (z.SibSp == 0) & (z.Parch == 0)]
+        self.hist_per_category(z, 'Survived', 'Fare', prefix="male_alone_", bins=30)
+
+        debug(x)
 
     def analyze_predictions(self, predictions):
         x = self.df
@@ -257,6 +275,7 @@ class Titanic:
 
     def train_model(self, name, model, test_size=0.3):
         df_relevant = self.prepare_data(self.df)
+        debug(df_relevant.head())
 
         debug("splitting")
         df_relevant = df_relevant.reindex(np.random.RandomState(seed=SEED).permutation(df_relevant.index))
@@ -273,9 +292,10 @@ class Titanic:
         if test_size > 0:
             score = model.score(test_X, test_y)
             debug("model {} score: {}".format(name, score))
-            importance = pd.DataFrame(model.feature_importances_, index=df_relevant.columns, columns=['importance'])
-            importance = importance.sort_values('importance', ascending=False)
-            debug("importance {}".format(importance))
+            if hasattr(model, 'feature_importances_'):
+                importance = pd.DataFrame(model.feature_importances_, index=df_relevant.columns, columns=['importance'])
+                importance = importance.sort_values('importance', ascending=False)
+                debug("importance {}".format(importance))
         else:
             score = None
 
@@ -353,17 +373,17 @@ class Titanic:
         x['Title'] = np.where(x['Title'].isin(values), x['Title'], 'Other')
         debug(x['Title'])
 
-    def hist_per_category(self, df, category, column):
+    def hist_per_category(self, df, category, column, prefix="", bins=11):
         fig, ax = plt.subplots()
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
         category_values = df[category].unique()
-        plt.hist([df.loc[df[category] == y, column] for y in category_values], label=category_values, bins=11)
+        plt.hist([df.loc[df[category] == y, column] for y in category_values], label=category_values, bins=bins)
         ax.legend()
         plt.title("{} histogram by {}".format(column, category))
 
-        fig.savefig("../output/hist_{}_per_{}.png".format(column, category))
+        fig.savefig("../output/{}hist_{}_per_{}.png".format(prefix, column, category))
 
     def extract_family(self):
         x = self.df
@@ -409,6 +429,7 @@ class Titanic:
         # debug(full.head())
         df['AgePredict'] = regressor.predict(full).astype('int')
         df['Age'] = np.where(df['Age'].isnull(), df['AgePredict'], df['Age'])
+        df = df.drop('AgePredict', 1)
         return df
 
 
@@ -434,16 +455,26 @@ t = Titanic()
 # t.extract_title()
 # t.extract_family()
 
-classifier = RandomForestClassifier(criterion='entropy',
-                                    max_depth=5,
-                                    max_features='auto',
-                                    n_estimators=500,
-                                    random_state=SEED)
+# classifier_name="mlp"
+# classifier = MLPClassifier(hidden_layer_sizes=(100,100,100),
+#                            max_iter=5000,
+#                            alpha=0.001,
+#                            solver='sgd',
+#                            verbose=10,
+#                            random_state=SEED,
+#                            tol=0.000001)
 
-t.train_model("random_forest", classifier, test_size=0.3)
-# t.check_predictions("random_forest")
+# classifier_name="random_forest"
+# classifier = RandomForestClassifier(criterion='entropy',
+#                                     max_depth=5,
+#                                     max_features='auto',
+#                                     n_estimators=500,
+#                                     random_state=SEED)
+
+# t.train_model(classifier_name, classifier, test_size=0.3)
+# t.check_predictions(classifier_name)
 
 
 # t.random_forest_hyperspace()
-t.train_model("random_forest", classifier, test_size=0)
-t.predict_submission("random_forest")
+t.train_model(classifier_name, classifier, test_size=0)
+t.predict_submission(classifier_name)
