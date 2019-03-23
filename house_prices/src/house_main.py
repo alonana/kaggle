@@ -6,10 +6,11 @@ from math import log
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib import rcParams
 from matplotlib.ticker import MaxNLocator
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
 
 COL_Y = 'salepricelog'
 COL_ID = 'passengerid'
@@ -38,8 +39,9 @@ class House:
         pd.set_option('display.width', 10000)
         pd.set_option('display.float_format', lambda x: '%.6f' % x)
         rcParams.update({'figure.autolayout': True})
+        plt.rcParams['figure.figsize'] = (1000, 1000)
 
-    def prepare_data(self, d, final_data=True, suffix=''):
+    def prepare_data(self, d, final_data=True, suffix='', remove_low=True):
         x = d.copy()
         x.columns = [n.lower() for n in x.columns]
 
@@ -58,12 +60,19 @@ class House:
                                   'exterior1st_ImStucc', 'roofmatl_Roll', 'heating_OthW', 'roofmatl_ClyTile',
                                   'poolqc_Fa', 'heating_Floor', 'condition2_RRAn', 'utilities_NoSeWa',
                                   'roofmatl_Membran', 'garagequal_Ex']
+
             for c in non_common_columns:
                 if c in x:
                     x.drop(c, axis=1, inplace=True)
 
             x.fillna(x.mean(), inplace=True)
             self.prepared_columns[suffix] = list(x)
+            if remove_low:
+                with open("../output/text/importance_low_manual.txt") as file:
+                    for c in file.read().splitlines():
+                        if c in x:
+                            x.drop(c, axis=1, inplace=True)
+
             with open("../output/text/prepared_data_{}.txt".format(suffix), "w") as file:
                 file.write(str(x))
         return x
@@ -106,6 +115,10 @@ class House:
             if hasattr(model, 'feature_importances_'):
                 importance = pd.DataFrame(model.feature_importances_, index=prepared.columns, columns=['importance'])
                 importance = importance.sort_values('importance', ascending=False)
+                with open("../output/text/importance_low.txt", "w") as file:
+                    for i, row in importance.iterrows():
+                        if row.importance < 0.001:
+                            file.write(i + "\n")
                 with open("../output/text/importance.txt", "w") as file:
                     file.write(str(importance))
 
@@ -118,6 +131,7 @@ class House:
         predict_cols = self.prepared_columns["predict"]
 
         diff = set(train_cols).symmetric_difference(set(predict_cols))
+        diff.remove(COL_Y)
         if len(diff) > 0:
             debug("mismatching columns located")
             debug(diff)
@@ -152,16 +166,60 @@ class House:
         fig.savefig("../output/graph/{}hist_{}_per_{}.png".format(prefix, column, category))
         plt.close()
 
+    def pairplot_for_numeric_column(self, df, c):
+        debug("pairplot for {}".format(c))
+        sns.pairplot(df[[c, COL_Y]], markers='+', height=5, diag_kws=dict(bins=30)).fig.savefig(
+            "../output/graph/pair_plot_{}.png".format(c))
+
     def hist_for_categories(self):
         for c in self.categoric_columns:
             self.hist_per_category(self.dp, c, COL_Y)
 
+    def pairplot_for_numeric(self):
+        for c in self.numeric_columns:
+            if c != COL_Y:
+                self.pairplot_for_numeric_column(self.dp, c)
+
+    def model_hyperspace(self, model, hyperspace_params):
+        df = self.prepare_data(self.d, suffix="predict")
+
+        debug("splitting")
+        df = df.reindex(np.random.RandomState(seed=SEED).permutation(df.index))
+        y = np.array(df[COL_Y])
+        df = df.drop(COL_Y, 1)
+
+        X = np.array(df)
+        search = RandomizedSearchCV(estimator=model, param_distributions=hyperspace_params, cv=4, verbose=10,
+                                    random_state=SEED, n_iter=100, n_jobs=-1)
+        search.fit(X, y)
+        debug(search.best_params_)
+
+    def random_forest_hyperspace(self):
+        hyperspace_params = {
+            'bootstrap': [True, False],
+            'max_depth': [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, None],
+            'max_features': ['auto', 'sqrt'],
+            'min_samples_leaf': [1, 2, 4],
+            'min_samples_split': [2, 5, 10],
+            'n_estimators': [100, 200, 400, 600, 800]
+        }
+        self.model_hyperspace(RandomForestRegressor(random_state=SEED), hyperspace_params)
+        # {'n_estimators': 800, 'min_samples_split': 2, 'min_samples_leaf': 1, 'max_features': 'sqrt', 'max_depth': 100,
+        #  'bootstrap': False}
+
 
 h = House()
-h.general()
+# h.general()
 # h.hist_for_categories()
-model = RandomForestRegressor(n_estimators=100)
-classifier_name = "random_forest"
-h.train_model("%s" % classifier_name, model)
-h.train_model(classifier_name, model, test_size=0)
-h.predict_submission(classifier_name)
+h.pairplot_for_numeric()
+model = RandomForestRegressor(n_estimators=800,
+                              min_samples_split=2,
+                              min_samples_leaf=1,
+                              max_features='sqrt',
+                              max_depth=100,
+                              bootstrap=False)
+# h.random_forest_hyperspace()
+# classifier_name = "random_forest"
+# h.train_model("%s" % classifier_name, model)
+# h.train_model(classifier_name, model, test_size=0)
+# h.predict_submission(classifier_name)
