@@ -3,12 +3,10 @@ import pickle
 from datetime import datetime
 from math import log
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import rcParams
-from matplotlib.ticker import MaxNLocator
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 
@@ -39,11 +37,15 @@ class House:
         pd.set_option('display.width', 10000)
         pd.set_option('display.float_format', lambda x: '%.6f' % x)
         rcParams.update({'figure.autolayout': True})
-        plt.rcParams['figure.figsize'] = (1000, 1000)
+        # plt.rcParams['figure.figsize'] = (1000, 1000)
 
     def prepare_data(self, d, final_data=True, suffix='', remove_low=True):
         x = d.copy()
         x.columns = [n.lower() for n in x.columns]
+        x['mssubclass'] = x['mssubclass'].astype('category')
+        x['yearremodadd_real'] = x['yearremodadd'] - x['yearbuilt']
+        x['yearremodadd_real'] = np.where(x['yearremodadd_real'] == 0, 0, x['yearremodadd'])
+        x.drop('yearremodadd', axis=1, inplace=True)
 
         if 'saleprice' in x:
             x[COL_Y] = x.saleprice.apply(lambda c: log(c, 10))
@@ -59,7 +61,7 @@ class House:
                                   'electrical_Mix', 'exterior2nd_Other', 'condition2_RRNn', 'roofmatl_Metal',
                                   'exterior1st_ImStucc', 'roofmatl_Roll', 'heating_OthW', 'roofmatl_ClyTile',
                                   'poolqc_Fa', 'heating_Floor', 'condition2_RRAn', 'utilities_NoSeWa',
-                                  'roofmatl_Membran', 'garagequal_Ex']
+                                  'roofmatl_Membran', 'garagequal_Ex', 'mssubclass_150']
 
             for c in non_common_columns:
                 if c in x:
@@ -153,27 +155,20 @@ class House:
         submission.index += 1461
         submission.to_csv(SUBMISSION_PATH, header=True, index=True)
 
-    def hist_per_category(self, df, category, column, prefix="", bins=30):
-        fig, ax = plt.subplots()
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-
-        category_values = df[category].unique()
-        plt.hist([df.loc[df[category] == y, column] for y in category_values], label=category_values, bins=bins)
-        ax.legend()
-        plt.title("{} histogram by {}".format(column, category))
-
-        fig.savefig("../output/graph/{}hist_{}_per_{}.png".format(prefix, column, category))
-        plt.close()
+    def catplot_per_category(self, df, category, prefix="", bins=30):
+        debug("catplot for {}".format(category))
+        sns.catplot(x=COL_Y, y=category, kind="violin", inner="stick", data=df, height=5).fig.savefig(
+            "../output/graph/{}catplot_{}.png".format(prefix, category)
+        )
 
     def pairplot_for_numeric_column(self, df, c):
         debug("pairplot for {}".format(c))
         sns.pairplot(df[[c, COL_Y]], markers='+', height=5, diag_kws=dict(bins=30)).fig.savefig(
             "../output/graph/pair_plot_{}.png".format(c))
 
-    def hist_for_categories(self):
+    def catplot_for_categories(self):
         for c in self.categoric_columns:
-            self.hist_per_category(self.dp, c, COL_Y)
+            self.catplot_per_category(self.dp, c)
 
     def pairplot_for_numeric(self):
         for c in self.numeric_columns:
@@ -210,8 +205,9 @@ class House:
 
 h = House()
 # h.general()
-# h.hist_for_categories()
-h.pairplot_for_numeric()
+# h.catplot_for_categories()
+# h.pairplot_for_numeric()
+classifier_name = "random_forest"
 model = RandomForestRegressor(n_estimators=800,
                               min_samples_split=2,
                               min_samples_leaf=1,
@@ -219,7 +215,6 @@ model = RandomForestRegressor(n_estimators=800,
                               max_depth=100,
                               bootstrap=False)
 # h.random_forest_hyperspace()
-# classifier_name = "random_forest"
-# h.train_model("%s" % classifier_name, model)
-# h.train_model(classifier_name, model, test_size=0)
-# h.predict_submission(classifier_name)
+h.train_model("%s" % classifier_name, model)
+h.train_model(classifier_name, model, test_size=0)
+h.predict_submission(classifier_name)
