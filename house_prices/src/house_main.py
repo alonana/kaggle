@@ -98,6 +98,7 @@ class House:
 
     def train_model(self, name, model, test_size=0.3):
         prepared = self.prepare_data(self.d, suffix="train")
+        prepared = self.remove_outsiders(prepared)
 
         debug("splitting")
         prepared = prepared.reindex(np.random.RandomState(seed=SEED).permutation(prepared.index))
@@ -202,11 +203,18 @@ class House:
         # {'n_estimators': 800, 'min_samples_split': 2, 'min_samples_leaf': 1, 'max_features': 'sqrt', 'max_depth': 100,
         #  'bootstrap': False}
 
+    def remove_outsiders(self, prepared):
+        x = prepared
+        out = x[(x['grlivarea'] < 4000) | (x[COL_Y] > 5.5)]
+        return out
+
 
 h = House()
 # h.general()
 # h.catplot_for_categories()
 # h.pairplot_for_numeric()
+# h.random_forest_hyperspace()
+# h.find_outsiders()
 classifier_name = "random_forest"
 model = RandomForestRegressor(n_estimators=800,
                               min_samples_split=2,
@@ -214,7 +222,6 @@ model = RandomForestRegressor(n_estimators=800,
                               max_features='sqrt',
                               max_depth=100,
                               bootstrap=False)
-# h.random_forest_hyperspace()
 h.train_model("%s" % classifier_name, model)
 h.train_model(classifier_name, model, test_size=0)
 h.predict_submission(classifier_name)
