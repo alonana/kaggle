@@ -3,6 +3,7 @@ import pickle
 from datetime import datetime
 from math import log
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -33,7 +34,8 @@ class House:
         self.numeric_columns = self.dp._get_numeric_data().columns
         self.categoric_columns = list(set(self.dp.columns) - set(self.numeric_columns))
         self.prepared_columns = {}
-        pd.set_option('display.max_columns', 500)
+        pd.set_option('display.max_rows', 2000)
+        pd.set_option('display.max_columns', 1000)
         pd.set_option('display.width', 10000)
         pd.set_option('display.float_format', lambda x: '%.6f' % x)
         rcParams.update({'figure.autolayout': True})
@@ -42,10 +44,14 @@ class House:
     def prepare_data(self, d, final_data=True, suffix='', remove_low=True):
         x = d.copy()
         x.columns = [n.lower() for n in x.columns]
+
         x['mssubclass'] = x['mssubclass'].astype('category')
+
         x['yearremodadd_real'] = x['yearremodadd'] - x['yearbuilt']
         x['yearremodadd_real'] = np.where(x['yearremodadd_real'] == 0, 0, x['yearremodadd'])
         x.drop('yearremodadd', axis=1, inplace=True)
+
+        x['total_sf'] = x['totalbsmtsf'] + x['1stflrsf'] + x['2ndflrsf']
 
         if 'saleprice' in x:
             x[COL_Y] = x.saleprice.apply(lambda c: log(c, 10))
@@ -67,6 +73,7 @@ class House:
                 if c in x:
                     x.drop(c, axis=1, inplace=True)
 
+
             x.fillna(x.mean(), inplace=True)
             self.prepared_columns[suffix] = list(x)
             if remove_low:
@@ -83,7 +90,7 @@ class House:
         debug("general")
 
         with open("../output/text/head.txt", "w") as file:
-            file.write(str(self.d.head()))
+            file.write(str(self.d.head(1000)))
 
         with open("../output/text/desc.txt", "w") as file:
             file.write(str(self.d.describe()))
@@ -208,9 +215,27 @@ class House:
         out = x[(x['grlivarea'] < 4000) | (x[COL_Y] > 5.5)]
         return out
 
+    def missing_values(self):
+        x = self.d
+        all_data_na = (x.isnull().sum() / len(x)) * 100
+        all_data_na = all_data_na.drop(all_data_na[all_data_na == 0].index).sort_values(ascending=False)
+        missing_data = pd.DataFrame({'Missing Ratio': all_data_na})
+        with open("../output/text/missing_values.txt", "w") as file:
+            file.write(str(missing_data))
+
+        fig, ax = plt.subplots(figsize=(15, 12))
+        plt.xticks(rotation='90')
+        sns.barplot(x=all_data_na.index, y=all_data_na)
+        plt.xlabel('Features', fontsize=15)
+        plt.ylabel('Percent of missing values', fontsize=15)
+        plt.title('Percent missing data by feature', fontsize=15)
+        fig.savefig("../output/graph/missing_values.png")
+
+
 
 h = House()
 # h.general()
+# h.missing_values()
 # h.catplot_for_categories()
 # h.pairplot_for_numeric()
 # h.random_forest_hyperspace()
