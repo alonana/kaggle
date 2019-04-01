@@ -1,0 +1,5 @@
+.idea
+**/data
+**/output
+titanic/model
+venv

@@ -1,12 +1,12 @@
 import io
 import pickle
 from datetime import datetime
-from math import log
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from math import log
 from matplotlib import rcParams
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
@@ -57,22 +57,35 @@ class House:
             x[COL_Y] = x.saleprice.apply(lambda c: log(c, 10))
             x.drop('saleprice', axis=1, inplace=True)
 
+        for c in ['Artery', 'Feedr', 'Norm', 'RRNn', 'RRAn', 'PosN', 'PosA', 'RRNe', 'RRAe']:
+            x['condition_join_{}'.format(c)] = np.where((x['condition1'] == c) | (x['condition2'] == c), 1, 0)
+        x.drop('condition1', axis=1, inplace=True)
+        x.drop('condition2', axis=1, inplace=True)
+
+        x['bsmtfintype_none'.format(c)] = np.where((x['bsmtfintype1'] == 'Unf') & (x['bsmtfintype2'] == 'Unf'), 1, 0)
+
+        for c in ['GLQ', 'ALQ', 'BLQ', 'Rec', 'LwQ']:
+            x['bsmtfintype_join_{}'.format(c)] = np.where((x['bsmtfintype1'] == c) | (x['bsmtfintype2'] == c), 1, 0)
+        x.drop('bsmtfintype1', axis=1, inplace=True)
+        x.drop('bsmtfintype2', axis=1, inplace=True)
+
+        for c in ['AsbShng', 'AsphShn', 'BrkComm', 'BrkFace', 'CBlock', 'CemntBd', 'HdBoard', 'ImStucc', 'MetalSd',
+                  'Other', 'Plywood', 'PreCast', 'Stone', 'Stucco', 'VinylSd', 'Wd Sdng', 'WdShing']:
+            x['exterior_join_{}'.format(c)] = np.where((x['exterior1st'] == c) | (x['exterior2nd'] == c), 1, 0)
+        x.drop('exterior1st', axis=1, inplace=True)
+        x.drop('exterior2nd', axis=1, inplace=True)
+
         if final_data:
-            all = x.copy()
-            x = x._get_numeric_data()
-            x = x.join(all[self.categoric_columns])
+
             x = pd.get_dummies(x)
 
-            non_common_columns = ['condition2_RRAe', 'miscfeature_TenC', 'housestyle_2.5Fin', 'exterior1st_Stone',
-                                  'electrical_Mix', 'exterior2nd_Other', 'condition2_RRNn', 'roofmatl_Metal',
-                                  'exterior1st_ImStucc', 'roofmatl_Roll', 'heating_OthW', 'roofmatl_ClyTile',
-                                  'poolqc_Fa', 'heating_Floor', 'condition2_RRAn', 'utilities_NoSeWa',
-                                  'roofmatl_Membran', 'garagequal_Ex', 'mssubclass_150']
+            non_common_columns = ['miscfeature_TenC', 'housestyle_2.5Fin', 'electrical_Mix', 'roofmatl_Metal',
+                                  'roofmatl_Roll', 'heating_OthW', 'roofmatl_ClyTile', 'poolqc_Fa', 'heating_Floor',
+                                  'utilities_NoSeWa', 'roofmatl_Membran', 'garagequal_Ex', 'mssubclass_150']
 
             for c in non_common_columns:
                 if c in x:
                     x.drop(c, axis=1, inplace=True)
-
 
             x.fillna(x.mean(), inplace=True)
             self.prepared_columns[suffix] = list(x)
@@ -83,7 +96,7 @@ class House:
                             x.drop(c, axis=1, inplace=True)
 
             with open("../output/text/prepared_data_{}.txt".format(suffix), "w") as file:
-                file.write(str(x))
+                file.write(str(x.head(2000)))
         return x
 
     def general(self):
@@ -232,7 +245,6 @@ class House:
         fig.savefig("../output/graph/missing_values.png")
 
 
-
 h = House()
 # h.general()
 # h.missing_values()
@@ -246,7 +258,8 @@ model = RandomForestRegressor(n_estimators=800,
                               min_samples_leaf=1,
                               max_features='sqrt',
                               max_depth=100,
-                              bootstrap=False)
+                              bootstrap=False,
+                              random_state=SEED)
 h.train_model("%s" % classifier_name, model)
 h.train_model(classifier_name, model, test_size=0)
 h.predict_submission(classifier_name)
