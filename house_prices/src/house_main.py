@@ -52,6 +52,21 @@ class House:
         x.drop('yearremodadd', axis=1, inplace=True)
 
         x['total_sf'] = x['totalbsmtsf'] + x['1stflrsf'] + x['2ndflrsf']
+        x['total_sqr_footage'] = (x['bsmtfinsf1'] + x['bsmtfinsf2'] +
+                                  x['1stflrsf'] + x['2ndflrsf'])
+
+        x['total_bathrooms'] = (x['fullbath'] + (0.5 * x['halfbath']) +
+                                x['bsmtfullbath'] + (0.5 * x['bsmthalfbath']))
+
+        x['total_porch_sf'] = (x['openporchsf'] + x['3ssnporch'] +
+                               x['enclosedporch'] + x['screenporch'] +
+                               x['wooddecksf'])
+
+        x['haspool'] = x['poolarea'].apply(lambda x: 1 if x > 0 else 0)
+        x['has2ndfloor'] = x['2ndflrsf'].apply(lambda x: 1 if x > 0 else 0)
+        x['hasgarage'] = x['garagearea'].apply(lambda x: 1 if x > 0 else 0)
+        x['hasbsmt'] = x['totalbsmtsf'].apply(lambda x: 1 if x > 0 else 0)
+        x['hasfireplace'] = x['fireplaces'].apply(lambda x: 1 if x > 0 else 0)
 
         if 'saleprice' in x:
             x[COL_Y] = x.saleprice.apply(lambda c: log(c, 10))
@@ -139,9 +154,13 @@ class House:
                 importance = pd.DataFrame(model.feature_importances_, index=prepared.columns, columns=['importance'])
                 importance = importance.sort_values('importance', ascending=False)
                 with open("../output/text/importance_low.txt", "w") as file:
+                    low_located = False
                     for i, row in importance.iterrows():
                         if row.importance < 0.001:
                             file.write(i + "\n")
+                            low_located = True
+                    if low_located:
+                        debug("low importance features located")
                 with open("../output/text/importance.txt", "w") as file:
                     file.write(str(importance))
 
