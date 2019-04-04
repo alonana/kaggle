@@ -29,19 +29,53 @@ def debug(msg):
 class House:
 
     def __init__(self):
-        self.d = pd.read_csv(TRAIN_PATH)
-        self.dp = self.prepare_data(self.d, False)
-        self.numeric_columns = self.dp._get_numeric_data().columns
-        self.categoric_columns = list(set(self.dp.columns) - set(self.numeric_columns))
-        self.prepared_columns = {}
         pd.set_option('display.max_rows', 2000)
         pd.set_option('display.max_columns', 1000)
         pd.set_option('display.width', 10000)
         pd.set_option('display.float_format', lambda x: '%.6f' % x)
         rcParams.update({'figure.autolayout': True})
+        self.d = pd.read_csv(TRAIN_PATH)
+        self.dp = self.prepare_data(self.d, False)
+        self.numeric_columns = self.dp._get_numeric_data().columns
+        self.categoric_columns = list(set(self.dp.columns) - set(self.numeric_columns))
+        self.prepared_columns = {}
         # plt.rcParams['figure.figsize'] = (1000, 1000)
 
-    def prepare_data(self, d, final_data=True, suffix='', remove_low=True):
+    def create_normalized_columns(self, df, column):
+        df["{}_zscore".format(column)] = (df[column] - df[column].mean()) / df[column].std(ddof=0)
+
+    def join_splitted_columns(self, x):
+        for c in ['Artery', 'Feedr', 'Norm', 'RRNn', 'RRAn', 'PosN', 'PosA', 'RRNe', 'RRAe']:
+            x['condition_join_{}'.format(c)] = np.where((x['condition1'] == c) | (x['condition2'] == c), 1, 0)
+        x.drop('condition1', axis=1, inplace=True)
+        x.drop('condition2', axis=1, inplace=True)
+        x['bsmtfintype_none'.format(c)] = np.where((x['bsmtfintype1'] == 'Unf') & (x['bsmtfintype2'] == 'Unf'), 1, 0)
+        for c in ['GLQ', 'ALQ', 'BLQ', 'Rec', 'LwQ']:
+            x['bsmtfintype_join_{}'.format(c)] = np.where((x['bsmtfintype1'] == c) | (x['bsmtfintype2'] == c), 1, 0)
+        x.drop('bsmtfintype1', axis=1, inplace=True)
+        x.drop('bsmtfintype2', axis=1, inplace=True)
+        for c in ['AsbShng', 'AsphShn', 'BrkComm', 'BrkFace', 'CBlock', 'CemntBd', 'HdBoard', 'ImStucc', 'MetalSd',
+                  'Other', 'Plywood', 'PreCast', 'Stone', 'Stucco', 'VinylSd', 'Wd Sdng', 'WdShing']:
+            x['exterior_join_{}'.format(c)] = np.where((x['exterior1st'] == c) | (x['exterior2nd'] == c), 1, 0)
+        x.drop('exterior1st', axis=1, inplace=True)
+        x.drop('exterior2nd', axis=1, inplace=True)
+
+    def combine_columns(self, x):
+        x['total_sf'] = x['totalbsmtsf'] + x['1stflrsf'] + x['2ndflrsf']
+        x['total_sqr_footage'] = (x['bsmtfinsf1'] + x['bsmtfinsf2'] +
+                                  x['1stflrsf'] + x['2ndflrsf'])
+        x['total_bathrooms'] = (x['fullbath'] + (0.5 * x['halfbath']) +
+                                x['bsmtfullbath'] + (0.5 * x['bsmthalfbath']))
+        x['total_porch_sf'] = (x['openporchsf'] + x['3ssnporch'] +
+                               x['enclosedporch'] + x['screenporch'] +
+                               x['wooddecksf'])
+        x['haspool'] = x['poolarea'].apply(lambda x: 1 if x > 0 else 0)
+        x['has2ndfloor'] = x['2ndflrsf'].apply(lambda x: 1 if x > 0 else 0)
+        x['hasgarage'] = x['garagearea'].apply(lambda x: 1 if x > 0 else 0)
+        x['hasbsmt'] = x['totalbsmtsf'].apply(lambda x: 1 if x > 0 else 0)
+        x['hasfireplace'] = x['fireplaces'].apply(lambda x: 1 if x > 0 else 0)
+
+    def prepare_data(self, d, final_data=True, suffix='', remove_low=True, remove_outside=False):
         x = d.copy()
         x.columns = [n.lower() for n in x.columns]
 
@@ -51,46 +85,32 @@ class House:
         x['yearremodadd_real'] = np.where(x['yearremodadd_real'] == 0, 0, x['yearremodadd'])
         x.drop('yearremodadd', axis=1, inplace=True)
 
-        x['total_sf'] = x['totalbsmtsf'] + x['1stflrsf'] + x['2ndflrsf']
-        x['total_sqr_footage'] = (x['bsmtfinsf1'] + x['bsmtfinsf2'] +
-                                  x['1stflrsf'] + x['2ndflrsf'])
-
-        x['total_bathrooms'] = (x['fullbath'] + (0.5 * x['halfbath']) +
-                                x['bsmtfullbath'] + (0.5 * x['bsmthalfbath']))
-
-        x['total_porch_sf'] = (x['openporchsf'] + x['3ssnporch'] +
-                               x['enclosedporch'] + x['screenporch'] +
-                               x['wooddecksf'])
-
-        x['haspool'] = x['poolarea'].apply(lambda x: 1 if x > 0 else 0)
-        x['has2ndfloor'] = x['2ndflrsf'].apply(lambda x: 1 if x > 0 else 0)
-        x['hasgarage'] = x['garagearea'].apply(lambda x: 1 if x > 0 else 0)
-        x['hasbsmt'] = x['totalbsmtsf'].apply(lambda x: 1 if x > 0 else 0)
-        x['hasfireplace'] = x['fireplaces'].apply(lambda x: 1 if x > 0 else 0)
+        self.combine_columns(x)
 
         if 'saleprice' in x:
             x[COL_Y] = x.saleprice.apply(lambda c: log(c, 10))
             x.drop('saleprice', axis=1, inplace=True)
 
-        for c in ['Artery', 'Feedr', 'Norm', 'RRNn', 'RRAn', 'PosN', 'PosA', 'RRNe', 'RRAe']:
-            x['condition_join_{}'.format(c)] = np.where((x['condition1'] == c) | (x['condition2'] == c), 1, 0)
-        x.drop('condition1', axis=1, inplace=True)
-        x.drop('condition2', axis=1, inplace=True)
+        if remove_outside:
+            x = self.remove_outsiders(x)
 
-        x['bsmtfintype_none'.format(c)] = np.where((x['bsmtfintype1'] == 'Unf') & (x['bsmtfintype2'] == 'Unf'), 1, 0)
+        self.join_splitted_columns(x)
 
-        for c in ['GLQ', 'ALQ', 'BLQ', 'Rec', 'LwQ']:
-            x['bsmtfintype_join_{}'.format(c)] = np.where((x['bsmtfintype1'] == c) | (x['bsmtfintype2'] == c), 1, 0)
-        x.drop('bsmtfintype1', axis=1, inplace=True)
-        x.drop('bsmtfintype2', axis=1, inplace=True)
+        discrete_numbers = ["bedroomabvgr", "bsmtfullbath", "bsmthalfbath", "fireplaces", "fullbath", "garagecars",
+                            "halfbath", "kitchenabvgr", "mosold", "overallcond", "overallqual", "total_bathrooms",
+                            "totrmsabvgrd", "yrsold"]
 
-        for c in ['AsbShng', 'AsphShn', 'BrkComm', 'BrkFace', 'CBlock', 'CemntBd', 'HdBoard', 'ImStucc', 'MetalSd',
-                  'Other', 'Plywood', 'PreCast', 'Stone', 'Stucco', 'VinylSd', 'Wd Sdng', 'WdShing']:
-            x['exterior_join_{}'.format(c)] = np.where((x['exterior1st'] == c) | (x['exterior2nd'] == c), 1, 0)
-        x.drop('exterior1st', axis=1, inplace=True)
-        x.drop('exterior2nd', axis=1, inplace=True)
+        continouos_numbers = ["1stflrsf", "2ndflrsf", "3ssnporch", "bsmtfinsf1", "bsmtfinsf2", "bsmtunfsf",
+                              "enclosedporch", "garagearea", "garageyrblt", "grlivarea", "lotarea", "lotfrontage",
+                              "lowqualfinsf", "masvnrarea", "miscval", "openporchsf", "poolarea", "screenporch",
+                              "total_porch_sf", "total_sf", "total_sqr_footage", "totalbsmtsf", "wooddecksf",
+                              "yearbuilt"]
+        for c in continouos_numbers:
+            self.create_normalized_columns(x, c)
 
         if final_data:
+            for c in continouos_numbers:
+                x.drop(c, axis=1, inplace=True)
 
             x = pd.get_dummies(x)
 
@@ -131,9 +151,9 @@ class House:
         with open("../output/text/info.txt", "w") as file:
             file.write(buf.getvalue())
 
-    def train_model(self, name, model, test_size=0.3):
-        prepared = self.prepare_data(self.d, suffix="train")
-        prepared = self.remove_outsiders(prepared)
+    def train_model(self, name, model, test_size=0.3, remove_outside=True):
+        d = self.d.copy()
+        prepared = self.prepare_data(d, suffix="train", remove_outside=remove_outside)
 
         debug("splitting")
         prepared = prepared.reindex(np.random.RandomState(seed=SEED).permutation(prepared.index))
@@ -279,6 +299,6 @@ model = RandomForestRegressor(n_estimators=800,
                               max_depth=100,
                               bootstrap=False,
                               random_state=SEED)
-h.train_model("%s" % classifier_name, model)
-h.train_model(classifier_name, model, test_size=0)
+h.train_model("%s" % classifier_name, model, remove_outside=True)
+h.train_model(classifier_name, model, test_size=0, remove_outside=False)
 h.predict_submission(classifier_name)
