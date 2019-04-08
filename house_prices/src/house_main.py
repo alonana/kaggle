@@ -2,15 +2,17 @@ import io
 import pathlib
 import pickle
 from datetime import datetime
+from math import log
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from math import log
 from matplotlib import rcParams
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
+
+from house_prices.src.stacked import AveragingModels
 
 COL_Y = 'salepricelog'
 
@@ -347,9 +349,22 @@ regressor = RandomForestRegressor(n_estimators=800,
                                   max_depth=100,
                                   bootstrap=False,
                                   random_state=SEED)
+
+classifier_name = "gradient_boosting"
+regressor = GradientBoostingRegressor(n_estimators=3000,
+                                      learning_rate=0.05,
+                                      max_depth=4,
+                                      max_features='sqrt',
+                                      min_samples_leaf=15,
+                                      min_samples_split=10,
+                                      loss='huber',
+                                      random_state=SEED)
+
 # h.remove_low_importance(regressor)
+
+averaged = AveragingModels()
 h.train_model("%s" % classifier_name, regressor)
 
-# h.train_model(classifier_name, regressor, test_size=0)
-# h = House(data_path=TEST_PATH)
-# h.predict_submission(classifier_name)
+h.train_model(classifier_name, regressor, test_size=0)
+h = House(data_path=TEST_PATH)
+h.predict_submission(classifier_name)
