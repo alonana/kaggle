@@ -9,6 +9,7 @@ import pandas as pd
 import seaborn as sns
 from math import log
 from matplotlib import rcParams
+from scipy.stats import skew
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 
@@ -52,8 +53,8 @@ class House:
                                    "yearbuilt"]
 
         self.df = self.preprocess(csv, remove_outside=False)
-        self.numeric_columns = self.df._get_numeric_data().columns
-        self.categoric_columns = list(set(self.df.columns) - set(self.numeric_columns))
+        numeric_columns = self.df._get_numeric_data().columns
+        self.categoric_columns = list(set(self.df.columns) - set(numeric_columns))
 
     def create_normalized_columns(self, df, column):
         # zscore
@@ -97,6 +98,7 @@ class House:
     def preprocess(self, csv, remove_outside=False):
         x = csv.copy()
         x.columns = [n.lower() for n in x.columns]
+
         x.drop('id', axis=1, inplace=True)
 
         x['mssubclass'] = x['mssubclass'].astype('category')
@@ -116,15 +118,15 @@ class House:
 
         x = self.join_splitted_columns(x)
 
-        for c in self.continuous_numbers:
-            self.create_normalized_columns(x, c)
+        # for c in self.continuous_numbers:
+        #     self.create_normalized_columns(x, c)
         return x
 
     def prepare_data(self, suffix=''):
         debug("prepare data")
         x = self.df.copy()
-        for c in self.continuous_numbers:
-            x.drop(c, axis=1, inplace=True)
+        # for c in self.continuous_numbers:
+        #     x.drop(c, axis=1, inplace=True)
 
         x = pd.get_dummies(x)
 
@@ -253,7 +255,7 @@ class House:
             self.catplot_per_category(self.df, c)
 
     def pairplot_for_numeric(self):
-        for c in self.numeric_columns:
+        for c in self.df._get_numeric_data().columns:
             if c != COL_Y:
                 self.pairplot_for_numeric_column(self.df, c)
 
@@ -328,6 +330,46 @@ class House:
                 for c in existing:
                     f.write("{}\n".format(c))
 
+    def find_skew(self):
+        numeric_feats = self.df.dtypes[self.df.dtypes != "object"].index
+        numeric_feats = list(filter(lambda c: 'join' not in c and 'haspool' not in c, numeric_feats))
+        skewed_feats = self.df[numeric_feats].apply(lambda x: skew(x.dropna())).sort_values(ascending=False)
+        print("\nSkew in numerical features: \n")
+        skewness = pd.DataFrame({'Skew': skewed_feats})
+        debug(skewness.head(20))
+
+
+def get_regressor_random_forest():
+    return "random_forest", RandomForestRegressor(n_estimators=800,
+                                                  min_samples_split=2,
+                                                  min_samples_leaf=1,
+                                                  max_features='sqrt',
+                                                  max_depth=100,
+                                                  bootstrap=False,
+                                                  random_state=SEED)
+
+
+def get_regressor_gradient_boosting():
+    return "gradient_boosting", GradientBoostingRegressor(n_estimators=3000,
+                                                          learning_rate=0.05,
+                                                          max_depth=4,
+                                                          max_features='sqrt',
+                                                          min_samples_leaf=15,
+                                                          min_samples_split=10,
+                                                          loss='huber',
+                                                          random_state=SEED)
+
+
+def get_regressor_averaged():
+    classifier_names = []
+    regressors = []
+    for n, r in [get_regressor_random_forest(), get_regressor_gradient_boosting()]:
+        classifier_names.append(n)
+        regressors.append(r)
+
+    averaged = AveragingModels(classifier_names, regressors)
+    return "average", averaged
+
 
 pd.set_option('display.max_rows', 2000)
 pd.set_option('display.max_columns', 1000)
@@ -336,39 +378,19 @@ pd.set_option('display.float_format', lambda x: '%.6f' % x)
 rcParams.update({'figure.autolayout': True})
 
 h = House()
+
 # h.general()
 # h.missing_values()
 # h.catplot_for_categories()
 # h.pairplot_for_numeric()
+h.find_skew()
 # h.random_forest_hyperspace()
 
-classifier_names = []
-regressors = []
-classifier_names.append("random_forest")
-regressors.append(RandomForestRegressor(n_estimators=800,
-                                        min_samples_split=2,
-                                        min_samples_leaf=1,
-                                        max_features='sqrt',
-                                        max_depth=100,
-                                        bootstrap=False,
-                                        random_state=SEED))
 
-classifier_names.append("gradient_boosting")
-regressors.append(GradientBoostingRegressor(n_estimators=3000,
-                                            learning_rate=0.05,
-                                            max_depth=4,
-                                            max_features='sqrt',
-                                            min_samples_leaf=15,
-                                            min_samples_split=10,
-                                            loss='huber',
-                                            random_state=SEED))
-
+# classifier_name, regressor = get_regressor_random_forest()
 # h.remove_low_importance(regressor)
+# h.train_model(classifier_name, regressor)
 
-averaged = AveragingModels(classifier_names, regressors)
-classifier_name = "average"
-h.train_model(classifier_name, averaged)
-
-h.train_model(classifier_name, averaged, test_size=0)
-h = House(data_path=TEST_PATH)
-h.predict_submission(classifier_name)
+# h.train_model(classifier_name, regressor, test_size=0)
+# h = House(data_path=TEST_PATH)
+# h.predict_submission(classifier_name)
