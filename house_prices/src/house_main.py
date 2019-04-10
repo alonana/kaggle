@@ -24,6 +24,7 @@ IMPORTANCE_THRESHOLD = 0.001
 IMPORTANCE_LOW_CURRENT = OUTPUT_PATH + "text/importance_low_current.txt"
 IMPORTANCE_LOW_TOTAL = OUTPUT_PATH + "text/importance_low_total.txt"
 COLUMNS_AFTER_PREPARE = OUTPUT_PATH + "text/columns_after_prepare_{}.txt"
+SKEWED_HANDLING_COLUMNS = OUTPUT_PATH + "text/skewed_columns.txt"
 
 MODEL_PATH = OUTPUT_PATH + 'model/{}.dat'
 SUBMISSION_PATH = OUTPUT_PATH + 'my_submission.csv'
@@ -101,7 +102,7 @@ class House:
 
         x.drop('id', axis=1, inplace=True)
 
-        x['mssubclass'] = x['mssubclass'].astype('category')
+        # x['mssubclass'] = x['mssubclass'].astype('category')
 
         x['yearremodadd_real'] = x['yearremodadd'] - x['yearbuilt']
         x['yearremodadd_real'] = np.where(x['yearremodadd_real'] == 0, 0, x['yearremodadd'])
@@ -125,6 +126,8 @@ class House:
     def prepare_data(self, suffix=''):
         debug("prepare data")
         x = self.df.copy()
+        # x = self.replace_skew(x)
+
         # for c in self.continuous_numbers:
         #     x.drop(c, axis=1, inplace=True)
 
@@ -296,7 +299,7 @@ class House:
         out = x[(x['grlivarea'] < 4000) | (x[COL_Y] > 5.5)]
         return out
 
-    def missing_values(self):
+    def display_missing_values(self):
         x = self.df
         all_data_na = (x.isnull().sum() / len(x)) * 100
         all_data_na = all_data_na.drop(all_data_na[all_data_na == 0].index).sort_values(ascending=False)
@@ -332,11 +335,27 @@ class House:
 
     def find_skew(self):
         numeric_feats = self.df.dtypes[self.df.dtypes != "object"].index
-        numeric_feats = list(filter(lambda c: 'join' not in c and 'haspool' not in c, numeric_feats))
+        numeric_feats = list(filter(lambda c: self.include_in_skew(c), numeric_feats))
         skewed_feats = self.df[numeric_feats].apply(lambda x: skew(x.dropna())).sort_values(ascending=False)
         print("\nSkew in numerical features: \n")
         skewness = pd.DataFrame({'Skew': skewed_feats})
-        debug(skewness.head(20))
+        skewness = skewness[abs(skewness.Skew) > 0.75]
+        debug("Handling Skew for {}".format(skewness.head(100)))
+        columns = [c for c in skewness.index]
+        with open(SKEWED_HANDLING_COLUMNS, 'wb') as f:
+            pickle.dump(columns, f)
+
+    def replace_skew(self, df):
+        with open(SKEWED_HANDLING_COLUMNS, 'rb') as f:
+            columns = pickle.load(f)
+        from scipy.special import boxcox1p
+        for c in columns:
+            df["{}_skewed_fix".format(c)] = boxcox1p(df[c], 0.15)
+            df.drop(c, axis=1, inplace=True)
+        return df
+
+    def include_in_skew(self, c):
+        return 'join' not in c and 'haspool' not in c and not 'has' in c and not 'halfbath' in c
 
 
 def get_regressor_random_forest():
@@ -380,17 +399,18 @@ rcParams.update({'figure.autolayout': True})
 h = House()
 
 # h.general()
-# h.missing_values()
+# h.display_missing_values()
 # h.catplot_for_categories()
 # h.pairplot_for_numeric()
-h.find_skew()
 # h.random_forest_hyperspace()
 
+classifier_name, regressor = get_regressor_random_forest()
 
-# classifier_name, regressor = get_regressor_random_forest()
 # h.remove_low_importance(regressor)
-# h.train_model(classifier_name, regressor)
+# h.find_skew()
 
-# h.train_model(classifier_name, regressor, test_size=0)
-# h = House(data_path=TEST_PATH)
-# h.predict_submission(classifier_name)
+h.train_model(classifier_name, regressor)
+
+h.train_model(classifier_name, regressor, test_size=0)
+h = House(data_path=TEST_PATH)
+h.predict_submission(classifier_name)

@@ -28,5 +28,4 @@ create additional new feature: total_size
 create additional indication feature: has_basement
 
 # TODO
-- understand skewed features
 - stacking machine learning models
