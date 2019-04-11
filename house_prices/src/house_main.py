@@ -25,6 +25,7 @@ IMPORTANCE_LOW_CURRENT = OUTPUT_PATH + "text/importance_low_current.txt"
 IMPORTANCE_LOW_TOTAL = OUTPUT_PATH + "text/importance_low_total.txt"
 COLUMNS_AFTER_PREPARE = OUTPUT_PATH + "text/columns_after_prepare_{}.txt"
 SKEWED_HANDLING_COLUMNS = OUTPUT_PATH + "text/skewed_columns.txt"
+USE_COLUMNS_LIST = OUTPUT_PATH + "text/use_columns_list.txt"
 
 MODEL_PATH = OUTPUT_PATH + 'model/{}.dat'
 SUBMISSION_PATH = OUTPUT_PATH + 'my_submission.csv'
@@ -33,7 +34,7 @@ SEED = 42
 
 
 def debug(msg):
-    print("{} ===>\n{}".format(datetime.now(), msg))
+    print("{} ===> {}".format(datetime.now(), msg))
 
 
 class House:
@@ -82,11 +83,11 @@ class House:
         return x
 
     def combine_columns(self, x):
-        x['total_sf'] = x['totalbsmtsf'] + x['1stflrsf'] + x['2ndflrsf']
-        x['total_sqr_footage'] = (x['bsmtfinsf1'] + x['bsmtfinsf2'] +
-                                  x['1stflrsf'] + x['2ndflrsf'])
-        x['total_bathrooms'] = (x['fullbath'] + (0.5 * x['halfbath']) +
-                                x['bsmtfullbath'] + (0.5 * x['bsmthalfbath']))
+        x['total_sf'] = x['totalbsmtsf'].fillna(0) + x['1stflrsf'].fillna(0) + x['2ndflrsf'].fillna(0)
+        x['total_sqr_footage'] = (x['bsmtfinsf1'].fillna(0) + x['bsmtfinsf2'].fillna(0) +
+                                  x['1stflrsf'].fillna(0) + x['2ndflrsf'].fillna(0))
+        x['total_bathrooms'] = (x['fullbath'].fillna(0) + (0.5 * x['halfbath'].fillna(0)) +
+                                x['bsmtfullbath'].fillna(0) + (0.5 * x['bsmthalfbath'].fillna(0)))
         x['total_porch_sf'] = (x['openporchsf'] + x['3ssnporch'] +
                                x['enclosedporch'] + x['screenporch'] +
                                x['wooddecksf'])
@@ -101,8 +102,6 @@ class House:
         x.columns = [n.lower() for n in x.columns]
 
         x.drop('id', axis=1, inplace=True)
-
-        # x['mssubclass'] = x['mssubclass'].astype('category')
 
         x['yearremodadd_real'] = x['yearremodadd'] - x['yearbuilt']
         x['yearremodadd_real'] = np.where(x['yearremodadd_real'] == 0, 0, x['yearremodadd'])
@@ -123,9 +122,31 @@ class House:
         #     self.create_normalized_columns(x, c)
         return x
 
-    def prepare_data(self, suffix=''):
-        debug("prepare data")
+    def handle_use_columns(self, x, create_columns_list):
+        columns = []
+        for c in x:
+            columns.append(c)
+        if create_columns_list:
+            with open(USE_COLUMNS_LIST, 'wb') as f:
+                pickle.dump(columns, f)
+        else:
+            with open(USE_COLUMNS_LIST, 'rb') as f:
+                use_columns = pickle.load(f)
+            for c in columns:
+                if c not in use_columns:
+                    x.drop(c, axis=1, inplace=True)
+
+        return x
+
+    def prepare_data(self, create_columns_list, suffix=''):
         x = self.df.copy()
+
+        x = self.fill_missing_values(x)
+        self.display_missing_values(x)
+
+        for c in self.discrete_numbers:
+            x[c] = x[c].astype('category')
+
         # x = self.replace_skew(x)
 
         # for c in self.continuous_numbers:
@@ -133,15 +154,7 @@ class House:
 
         x = pd.get_dummies(x)
 
-        non_common_columns = ['garagequal_Ex', 'electrical_Mix', 'roofmatl_Metal', 'miscfeature_TenC',
-                              'utilities_NoSeWa', 'heating_Floor', 'roofmatl_Membran', 'poolqc_Fa', 'heating_OthW',
-                              'roofmatl_ClyTile', 'roofmatl_Roll', 'housestyle_2.5Fin', 'mssubclass_150']
-
-        for c in non_common_columns:
-            if c in x:
-                x.drop(c, axis=1, inplace=True)
-
-        x.fillna(x.mean(), inplace=True)
+        x = self.handle_use_columns(x, create_columns_list)
 
         with open(IMPORTANCE_LOW_TOTAL) as file:
             for c in file.read().splitlines():
@@ -175,7 +188,7 @@ class House:
             file.write(buf.getvalue())
 
     def train_model(self, name, model, test_size=0.3):
-        prepared = self.prepare_data(suffix="train")
+        prepared = self.prepare_data(True, suffix="train")
 
         prepared = prepared.reindex(np.random.RandomState(seed=SEED).permutation(prepared.index))
         y = np.array(prepared[COL_Y])
@@ -229,7 +242,7 @@ class House:
         debug("predict start")
         with open(MODEL_PATH.format(name), 'rb') as f:
             model = pickle.load(f)
-        prepared = self.prepare_data(suffix="predict")
+        prepared = self.prepare_data(False, suffix="predict")
 
         self.prepared_columns_diff()
 
@@ -241,16 +254,16 @@ class House:
         submission.index += 1461
         submission.to_csv(SUBMISSION_PATH, header=True, index=True)
 
-    def catplot_per_category(self, df, category, prefix=""):
+    def catplot_per_category(self, df, category):
         debug("catplot for {}".format(category))
         fig = sns.catplot(x=COL_Y, y=category, kind="violin", inner="stick", data=df, height=5).fig
-        fig.savefig(OUTPUT_PATH + "graph/{}catplot_{}.png".format(prefix, category))
+        fig.savefig(OUTPUT_PATH + "graph/{}_catplot.png".format(category))
         plt.close(fig)
 
     def pairplot_for_numeric_column(self, df, c):
         debug("pairplot for {}".format(c))
         fig = sns.pairplot(df[[c, COL_Y]], markers='+', height=5, diag_kws=dict(bins=30)).fig
-        fig.savefig(OUTPUT_PATH + "graph/pair_plot_{}.png".format(c))
+        fig.savefig(OUTPUT_PATH + "graph/{}_pairplot.png".format(c))
         plt.close(fig)
 
     def catplot_for_categories(self):
@@ -263,7 +276,7 @@ class House:
                 self.pairplot_for_numeric_column(self.df, c)
 
     def model_hyperspace(self, model, hyperspace_params):
-        df = self.prepare_data(suffix="predict")
+        df = self.prepare_data(True, suffix="predict")
 
         debug("splitting")
         df = df.reindex(np.random.RandomState(seed=SEED).permutation(df.index))
@@ -299,21 +312,43 @@ class House:
         out = x[(x['grlivarea'] < 4000) | (x[COL_Y] > 5.5)]
         return out
 
-    def display_missing_values(self):
-        x = self.df
+    def fill_missing_values(self, df):
+        x = df
+        for c in ['poolqc', 'miscfeature', 'alley', 'fence', 'fireplacequ', 'garagecond', 'garagequal', 'garagefinish',
+                  'garagetype', 'bsmtexposure', 'bsmtcond', 'bsmtqual', 'masvnrtype', 'electrical']:
+            x[c] = x[c].fillna('None')
+
+        for c in ['lotfrontage', 'garageyrblt', 'masvnrarea', 'bsmthalfbath', 'bsmtfullbath', 'garagearea', 'bsmtunfsf',
+                  'bsmtfinsf1', 'bsmtfinsf2', 'totalbsmtsf', 'garagecars']:
+            x[c] = x[c].fillna(0)
+
+        x['mszoning'] = x['mszoning'].fillna('RL')
+        x['functional'] = x['functional'].fillna('Typ')
+        x['utilities'] = x['utilities'].fillna('AllPub')
+        x['saletype'] = x['saletype'].fillna('Oth')
+        x['kitchenqual'] = x['kitchenqual'].fillna('TA')
+
+        x['garagecars'] = x['garagecars'].astype('int64')
+        x['bsmtfullbath'] = x['bsmtfullbath'].astype('int64')
+
+        return x
+
+    def display_missing_values(self, x):
         all_data_na = (x.isnull().sum() / len(x)) * 100
         all_data_na = all_data_na.drop(all_data_na[all_data_na == 0].index).sort_values(ascending=False)
         missing_data = pd.DataFrame({'Missing Ratio': all_data_na})
         with open(OUTPUT_PATH + "text/missing_values.txt", "w") as file:
             file.write(str(missing_data))
 
-        fig, ax = plt.subplots(figsize=(15, 12))
-        plt.xticks(rotation='90')
-        sns.barplot(x=all_data_na.index, y=all_data_na)
-        plt.xlabel('Features', fontsize=15)
-        plt.ylabel('Percent of missing values', fontsize=15)
-        plt.title('Percent missing data by feature', fontsize=15)
-        fig.savefig(OUTPUT_PATH + "graph/missing_values.png")
+        if all_data_na.size > 0:
+            debug("Missing values located!!")
+            fig, ax = plt.subplots(figsize=(15, 12))
+            plt.xticks(rotation='90')
+            sns.barplot(x=all_data_na.index, y=all_data_na)
+            plt.xlabel('Features', fontsize=15)
+            plt.ylabel('Percent of missing values', fontsize=15)
+            plt.title('Percent missing data by feature', fontsize=15)
+            fig.savefig(OUTPUT_PATH + "graph/missing_values.png")
 
     def remove_low_importance(self, model):
         open(IMPORTANCE_LOW_TOTAL, "w").close()
@@ -391,7 +426,7 @@ def get_regressor_averaged():
 
 
 pd.set_option('display.max_rows', 2000)
-pd.set_option('display.max_columns', 1000)
+pd.set_option('display.max_columns', 2000)
 pd.set_option('display.width', 10000)
 pd.set_option('display.float_format', lambda x: '%.6f' % x)
 rcParams.update({'figure.autolayout': True})
@@ -399,18 +434,19 @@ rcParams.update({'figure.autolayout': True})
 h = House()
 
 # h.general()
-# h.display_missing_values()
+
 # h.catplot_for_categories()
 # h.pairplot_for_numeric()
+
 # h.random_forest_hyperspace()
 
 classifier_name, regressor = get_regressor_random_forest()
 
-# h.remove_low_importance(regressor)
+h.remove_low_importance(regressor)
 # h.find_skew()
 
 h.train_model(classifier_name, regressor)
 
-h.train_model(classifier_name, regressor, test_size=0)
-h = House(data_path=TEST_PATH)
-h.predict_submission(classifier_name)
+# h.train_model(classifier_name, regressor, test_size=0)
+# h_predict = House(data_path=TEST_PATH)
+# h_predict.predict_submission(classifier_name)

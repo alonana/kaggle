@@ -26,6 +26,11 @@ pip install seaborn
 create additional new feature: total_size
 - in case we have a numeric feature, where value zero exists basement_size, 
 create additional indication feature: has_basement
+- in case of missing values, do not just replace with mean.
+First check what is the percent of the missing values.
+In some cases, you will assign a special value for the missing values, like 'None'.
+In other cases, deduct one of the category values (for example the most common value).
+For numeric, you might use the mean value or zero value.
 
 # TODO
 - stacking machine learning models
