@@ -2,18 +2,21 @@ import io
 import pathlib
 import pickle
 from datetime import datetime
+from math import log
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from math import log
+import xgboost as xgb
 from matplotlib import rcParams
 from scipy.stats import skew
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.kernel_ridge import KernelRidge
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 
-from house_prices.src.stacked import AveragingModels
+from house_prices.src.stacked_average import StackedAverage
+from house_prices.src.stacked_metamodel import StackedMetadata
 
 COL_Y = 'salepricelog'
 
@@ -226,7 +229,6 @@ class House:
                 pickle.dump(model, f)
 
     def prepared_columns_diff(self):
-        debug('columns diff')
         with open(COLUMNS_AFTER_PREPARE.format("train"), 'rb') as f:
             train_cols = pickle.load(f)
         with open(COLUMNS_AFTER_PREPARE.format("predict"), 'rb') as f:
@@ -238,15 +240,17 @@ class House:
             debug("mismatching columns located")
             debug(diff)
 
-    def predict_submission(self, name):
+    def predict_submission(self, name, model=None):
         debug("predict start")
-        with open(MODEL_PATH.format(name), 'rb') as f:
-            model = pickle.load(f)
+        if model is None:
+            with open(MODEL_PATH.format(name), 'rb') as f:
+                model = pickle.load(f)
         prepared = self.prepare_data(False, suffix="predict")
 
         self.prepared_columns_diff()
 
-        predictions = model.predict(prepared)
+        X = np.array(prepared)
+        predictions = model.predict(X)
         debug(predictions)
         prices = [10 ** p for p in predictions]
         submission = pd.DataFrame(data={'SalePrice': prices})
@@ -414,15 +418,50 @@ def get_regressor_gradient_boosting():
                                                           random_state=SEED)
 
 
-def get_regressor_averaged():
-    classifier_names = []
-    regressors = []
-    for n, r in [get_regressor_random_forest(), get_regressor_gradient_boosting()]:
-        classifier_names.append(n)
-        regressors.append(r)
+def get_regressor_kernel_ridge():
+    return "kernel_ridge", KernelRidge(alpha=0.6,
+                                       kernel='polynomial',
+                                       degree=2,
+                                       coef0=2.5)
 
-    averaged = AveragingModels(classifier_names, regressors)
+
+def get_regressor_xg_boosting():
+    return "xg_boosting", xgb.XGBRegressor(colsample_bytree=0.4603,
+                                           gamma=0.0468,
+                                           learning_rate=0.05,
+                                           max_depth=3,
+                                           min_child_weight=1.7817,
+                                           n_estimators=2200,
+                                           reg_alpha=0.4640,
+                                           reg_lambda=0.8571,
+                                           subsample=0.5213,
+                                           silent=1,
+                                           nthread=-1,
+                                           random_state=SEED)
+
+
+def get_stacked_models():
+    regressors = []
+    for n, r in [get_regressor_random_forest(),
+                 get_regressor_gradient_boosting(),
+                 get_regressor_xg_boosting(),
+                 get_regressor_kernel_ridge()]:
+        regressors.append(r)
+    return regressors
+
+
+def get_regressor_averaged():
+    regressors = get_stacked_models()
+
+    averaged = StackedAverage(regressors)
     return "average", averaged
+
+
+def get_regressor_metamodel():
+    regressors = get_stacked_models()
+    metadata_model = get_regressor_random_forest()[1]
+    stacked = StackedMetadata(regressors, metadata_model)
+    return "stacked", stacked
 
 
 pd.set_option('display.max_rows', 2000)
@@ -442,11 +481,11 @@ h = House()
 
 classifier_name, regressor = get_regressor_random_forest()
 
-h.remove_low_importance(regressor)
 # h.find_skew()
+h.remove_low_importance(regressor)
 
 h.train_model(classifier_name, regressor)
 
-# h.train_model(classifier_name, regressor, test_size=0)
-# h_predict = House(data_path=TEST_PATH)
-# h_predict.predict_submission(classifier_name)
+h.train_model(classifier_name, regressor, test_size=0)
+h_predict = House(data_path=TEST_PATH)
+h_predict.predict_submission(classifier_name, regressor)

@@ -16,6 +16,7 @@ pip install pandas
 sudo apt-get install python3-tk
 pip install scikit-learn
 pip install seaborn
+pip install xgboost
 
 
 # What have I learned?
