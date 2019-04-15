@@ -73,11 +73,13 @@ class House:
             x['condition_join_{}'.format(c)] = np.where((x['condition1'] == c) | (x['condition2'] == c), 1, 0)
         x.drop('condition1', axis=1, inplace=True)
         x.drop('condition2', axis=1, inplace=True)
+
         x['bsmtfintype_none'.format(c)] = np.where((x['bsmtfintype1'] == 'Unf') & (x['bsmtfintype2'] == 'Unf'), 1, 0)
         for c in ['GLQ', 'ALQ', 'BLQ', 'Rec', 'LwQ']:
             x['bsmtfintype_join_{}'.format(c)] = np.where((x['bsmtfintype1'] == c) | (x['bsmtfintype2'] == c), 1, 0)
         x.drop('bsmtfintype1', axis=1, inplace=True)
         x.drop('bsmtfintype2', axis=1, inplace=True)
+
         for c in ['AsbShng', 'AsphShn', 'BrkComm', 'BrkFace', 'CBlock', 'CemntBd', 'HdBoard', 'ImStucc', 'MetalSd',
                   'Other', 'Plywood', 'PreCast', 'Stone', 'Stucco', 'VinylSd', 'Wd Sdng', 'WdShing']:
             x['exterior_join_{}'.format(c)] = np.where((x['exterior1st'] == c) | (x['exterior2nd'] == c), 1, 0)
@@ -87,13 +89,17 @@ class House:
 
     def combine_columns(self, x):
         x['total_sf'] = x['totalbsmtsf'].fillna(0) + x['1stflrsf'].fillna(0) + x['2ndflrsf'].fillna(0)
+
         x['total_sqr_footage'] = (x['bsmtfinsf1'].fillna(0) + x['bsmtfinsf2'].fillna(0) +
                                   x['1stflrsf'].fillna(0) + x['2ndflrsf'].fillna(0))
+
         x['total_bathrooms'] = (x['fullbath'].fillna(0) + (0.5 * x['halfbath'].fillna(0)) +
                                 x['bsmtfullbath'].fillna(0) + (0.5 * x['bsmthalfbath'].fillna(0)))
+
         x['total_porch_sf'] = (x['openporchsf'] + x['3ssnporch'] +
                                x['enclosedporch'] + x['screenporch'] +
                                x['wooddecksf'])
+
         x['haspool'] = x['poolarea'].apply(lambda c: 1 if c > 0 else 0)
         x['has2ndfloor'] = x['2ndflrsf'].apply(lambda c: 1 if c > 0 else 0)
         x['hasgarage'] = x['garagearea'].apply(lambda c: 1 if c > 0 else 0)
@@ -396,6 +402,19 @@ class House:
     def include_in_skew(self, c):
         return 'join' not in c and 'haspool' not in c and not 'has' in c and not 'halfbath' in c
 
+    def heatmap(self):
+        debug("heatmap")
+        corr = self.df.corr()
+        for row_index, row in corr.iterrows():
+            for column_index, value in row.iteritems():
+                if column_index != row_index:
+                    if abs(value) > 0.8:
+                        debug("correlated features: {} AND {}   ->   {}".format(row_index, column_index, value))
+        fig, ax = plt.subplots(figsize=(40, 40))
+        sns.heatmap(self.df.corr(), annot=True, linewidths=.5, fmt='.1f', ax=ax)
+        fig.savefig(OUTPUT_PATH + "graph/heatmap.png")
+        plt.close(fig)
+
 
 def get_regressor_random_forest():
     return "random_forest", RandomForestRegressor(n_estimators=800,
@@ -473,7 +492,7 @@ rcParams.update({'figure.autolayout': True})
 h = House()
 
 # h.general()
-
+h.heatmap()
 # h.catplot_for_categories()
 # h.pairplot_for_numeric()
 
@@ -482,10 +501,10 @@ h = House()
 classifier_name, regressor = get_regressor_random_forest()
 
 # h.find_skew()
-h.remove_low_importance(regressor)
+# h.remove_low_importance(regressor)
 
-h.train_model(classifier_name, regressor)
+# h.train_model(classifier_name, regressor)
 
-h.train_model(classifier_name, regressor, test_size=0)
-h_predict = House(data_path=TEST_PATH)
-h_predict.predict_submission(classifier_name, regressor)
+# h.train_model(classifier_name, regressor, test_size=0)
+# h_predict = House(data_path=TEST_PATH)
+# h_predict.predict_submission(classifier_name, regressor)
