@@ -2,13 +2,13 @@ import io
 import pathlib
 import pickle
 from datetime import datetime
-from math import log
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import xgboost as xgb
+from math import log
 from matplotlib import rcParams
 from scipy.stats import skew
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
@@ -415,6 +415,18 @@ class House:
         fig.savefig(OUTPUT_PATH + "graph/heatmap.png")
         plt.close(fig)
 
+    def anova(self):
+        checked_col = 'overallqual'
+        fig, ax = plt.subplots()
+        self.df.boxplot(COL_Y, by=checked_col, ax=ax)
+        plt.savefig(OUTPUT_PATH + "graph/anova_boxplot.png")
+
+        from statsmodels.formula.api import ols
+        import statsmodels.api as sm
+        mod = ols('{} ~ {}'.format(COL_Y, checked_col), data=self.df).fit()
+        aov_table = sm.stats.anova_lm(mod, typ=2)
+        print(aov_table)
+
 
 def get_regressor_random_forest():
     return "random_forest", RandomForestRegressor(n_estimators=800,
@@ -492,7 +504,8 @@ rcParams.update({'figure.autolayout': True})
 h = House()
 
 # h.general()
-h.heatmap()
+# h.heatmap()
+h.anova()
 # h.catplot_for_categories()
 # h.pairplot_for_numeric()
 

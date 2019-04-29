@@ -17,6 +17,7 @@ sudo apt-get install python3-tk
 pip install scikit-learn
 pip install seaborn
 pip install xgboost
+pip install statsmodels
 
 
 # What have I learned?
