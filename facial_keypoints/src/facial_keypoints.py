@@ -51,19 +51,29 @@ class Facial:
             new_row = [row.left_eye_center_x, row.left_eye_center_y] + self.get_pixels(row)
             rows.append(new_row)
 
-        df = pd.DataFrame(rows, columns=['eye_x', 'eye_y'])
+        columns = ['eye_x', 'eye_y']
+        pixels_start_column = len(columns)
+        for r in range(IMAGE_SIZE):
+            for c in range(IMAGE_SIZE):
+                columns.append("p{}_{}".format(r, c))
 
-        num_images = self.df.shape[0]
-        x_as_array = self.df.values[:, start_column:]
+        df = pd.DataFrame(rows, columns=columns)
+
+        num_images = df.shape[0]
+
+        x_as_array = df.values[:, pixels_start_column:]
         x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
         out_x = x_shaped_array / 255
-        debug("data prep done")
+
+        y_as_array = df.values[:, 0:pixels_start_column]
+        out_y = y_as_array.reshape(num_images, pixels_start_column)
+
+        debug("data prepare done")
         return out_x, out_y
 
     def build_model(self):
-        debug("build model")
-
         x, y = self.data_prepare()
+        debug("build model")
 
         model = Sequential()
         model.add(Conv2D(20,
@@ -86,6 +96,6 @@ class Facial:
         model.save(MODEL_PATH)
 
 
-# f = Facial(max_rows=10)
+f = Facial(max_rows=100)
 # f.save_images()
-f = Facial()
+f.build_model()
