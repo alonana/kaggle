@@ -22,7 +22,8 @@ def debug(msg):
 
 
 class Facial:
-    def __init__(self, path=TRAIN_PATH, max_rows=None):
+    def __init__(self, path=TRAIN_PATH, max_rows=None, train_mode=True):
+        self.train_mode = train_mode
         pathlib.Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
         pathlib.Path(IMAGES_PATH).mkdir(parents=True, exist_ok=True)
         debug("loading csv from {} starting".format(path))
@@ -44,20 +45,27 @@ class Facial:
         return pixels
 
     def data_prepare(self):
-        debug("data prep starting")
+        debug("data prepare starting")
+
+        if self.train_mode:
+            prepared_columns = ['left_eye_center_x', 'left_eye_center_y']
+        else:
+            prepared_columns = []
 
         rows = []
         for i, row in self.df.iterrows():
-            new_row = [row.left_eye_center_x, row.left_eye_center_y] + self.get_pixels(row)
+            if self.train_mode:
+                new_row = [row[c] for c in prepared_columns] + self.get_pixels(row)
+            else:
+                new_row = self.get_pixels(row)
             rows.append(new_row)
 
-        columns = ['eye_x', 'eye_y']
-        pixels_start_column = len(columns)
-        for r in range(IMAGE_SIZE):
-            for c in range(IMAGE_SIZE):
-                columns.append("p{}_{}".format(r, c))
+        pixels_start_column = len(prepared_columns)
+        for pixel_row in range(IMAGE_SIZE):
+            for pixel_col in range(IMAGE_SIZE):
+                prepared_columns.append("p{}_{}".format(pixel_row, pixel_col))
 
-        df = pd.DataFrame(rows, columns=columns)
+        df = pd.DataFrame(rows, columns=prepared_columns)
 
         num_images = df.shape[0]
 
@@ -65,8 +73,11 @@ class Facial:
         x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
         out_x = x_shaped_array / 255
 
-        y_as_array = df.values[:, 0:pixels_start_column]
-        out_y = y_as_array.reshape(num_images, pixels_start_column)
+        if self.train_mode:
+            y_as_array = df.values[:, 0:pixels_start_column]
+            out_y = y_as_array.reshape(num_images, pixels_start_column)
+        else:
+            out_y = None
 
         debug("data prepare done")
         return out_x, out_y
@@ -95,7 +106,18 @@ class Facial:
 
         model.save(MODEL_PATH)
 
+    def predict(self):
+        debug("predict start")
+        model = keras.models.load_model(MODEL_PATH)
+        print(model.summary())
+        x, y = self.data_prepare()
 
-f = Facial(max_rows=100)
+        predictions = model.predict(x).tolist()
+        debug(predictions)
+
+
+# f = Facial(max_rows=100)
 # f.save_images()
-f.build_model()
+# f.build_model()
+f = Facial(max_rows=2, path=TEST_PATH, train_mode=False)
+f.predict()
