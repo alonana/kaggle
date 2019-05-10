@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from tensorflow.python import keras
-from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
+from tensorflow.python.keras.layers import Dense, Flatten, Dropout
 from tensorflow.python.keras.models import Sequential
 
 TRAIN_PATH = '../data/training.csv'
@@ -24,6 +24,7 @@ def debug(msg):
 class Facial:
     def __init__(self, path=TRAIN_PATH, max_rows=None, train_mode=True):
         self.train_mode = train_mode
+        self.target_labels = ['left_eye_center_x', 'left_eye_center_y']
         pathlib.Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
         pathlib.Path(IMAGES_PATH).mkdir(parents=True, exist_ok=True)
         debug("loading csv from {} starting".format(path))
@@ -47,10 +48,9 @@ class Facial:
     def data_prepare(self):
         debug("data prepare starting")
 
+        prepared_columns = []
         if self.train_mode:
-            prepared_columns = ['left_eye_center_x', 'left_eye_center_y']
-        else:
-            prepared_columns = []
+            prepared_columns += self.target_labels
 
         rows = []
         for i, row in self.df.iterrows():
@@ -70,7 +70,7 @@ class Facial:
         num_images = df.shape[0]
 
         x_as_array = df.values[:, pixels_start_column:]
-        x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
+        x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE)
         out_x = x_shaped_array / 255
 
         if self.train_mode:
@@ -87,21 +87,18 @@ class Facial:
         debug("build model")
 
         model = Sequential()
-        model.add(Conv2D(20,
-                         kernel_size=(3, 3),
-                         activation='relu',
-                         input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
-        model.add(Conv2D(20, kernel_size=(3, 3), activation='relu'))
-        model.add(Flatten())
+        model.add(Flatten(input_shape=(IMAGE_SIZE, IMAGE_SIZE)))
         model.add(Dense(128, activation='relu'))
-        model.add(Dense(NUM_CLASSES, activation='softmax'))
+        model.add(Dropout(0.1))
+        model.add(Dense(64, activation='relu'))
+        model.add(Dense(len(self.target_labels), activation='relu'))
 
-        model.compile(loss=keras.losses.categorical_crossentropy,
+        model.compile(loss='mse',
                       optimizer='adam',
-                      metrics=['accuracy'])
+                      metrics=['mae', 'accuracy'])
         model.fit(x, y,
-                  batch_size=32,
-                  epochs=2,
+                  batch_size=128,
+                  epochs=500,
                   validation_split=0.2)
 
         model.save(MODEL_PATH)
@@ -115,9 +112,24 @@ class Facial:
         predictions = model.predict(x).tolist()
         debug(predictions)
 
+    def display_missing_values(self):
+        all_data_na = (self.df.isnull().sum() / len(self.df)) * 100
+        all_data_na = all_data_na.drop(all_data_na[all_data_na == 0].index).sort_values(ascending=False)
+        missing_data = pd.DataFrame({'Missing Ratio': all_data_na})
+        print(str(missing_data))
 
-# f = Facial(max_rows=100)
-# f.save_images()
-# f.build_model()
-f = Facial(max_rows=2, path=TEST_PATH, train_mode=False)
-f.predict()
+
+def train():
+    f = Facial(max_rows=100)
+    # f.display_missing_values()
+    # f.save_images()
+    f.build_model()
+
+
+def predict():
+    f = Facial(max_rows=2, path=TEST_PATH, train_mode=False)
+    f.predict()
+
+
+train()
+# predict()
