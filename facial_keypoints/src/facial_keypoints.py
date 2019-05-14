@@ -15,6 +15,7 @@ OUTPUT_PATH = '../output'
 IMAGES_PATH = "{}/images".format(OUTPUT_PATH)
 MODEL_PATH = "{}/model.dat".format(OUTPUT_PATH)
 PREDICTIONS_PATH = '{}/predictions.csv'.format(OUTPUT_PATH)
+SUBMISSION_PATH = '{}/submission.csv'.format(OUTPUT_PATH)
 IMAGE_SIZE = 96
 NUM_CLASSES = 2
 
@@ -134,8 +135,10 @@ class Facial:
         predictions_df = pd.DataFrame(predictions, columns=self.target_labels, index=index)
         predictions_df.index.name = 'Index'
         predictions_df.to_csv(PREDICTIONS_PATH)
+        debug("predict done")
 
     def submit(self, max_rows=None):
+        debug("submit starting")
         predictions = pd.read_csv(PREDICTIONS_PATH, dtype={'Index': str}, index_col='Index')
 
         lookup = pd.read_csv(LOOKUP_PATH, nrows=max_rows, dtype={'ImageId': str, 'RowId': str}, index_col='RowId')
@@ -147,7 +150,8 @@ class Facial:
             location = prediction_row[label]
             lookup.loc[i, 'Location'] = location
 
-        print(lookup)
+        lookup[["Location"]].to_csv(SUBMISSION_PATH)
+        debug("submit done")
 
     def display_missing_values(self):
         all_data_na = (self.df.isnull().sum() / len(self.df)) * 100
@@ -157,17 +161,17 @@ class Facial:
 
 
 def train():
-    f = Facial()
+    f = Facial(max_rows=None)
     # f.display_missing_values()
     # f.save_images()
     f.build_model()
 
 
 def predict():
-    f = Facial(path=TEST_PATH, train_mode=False)
+    f = Facial(path=TEST_PATH, train_mode=False, max_rows=None)
     f.predict()
     f.submit()
 
 
-train()
+# train()
 predict()
