@@ -29,6 +29,7 @@ class Facial:
         self.train_mode = train_mode
         self.target_labels = []
         self.build_target_labels()
+        self.target_labels = ['left_eye_center_x', 'left_eye_center_y']
 
         pathlib.Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
         pathlib.Path(IMAGES_PATH).mkdir(parents=True, exist_ok=True)
@@ -50,15 +51,26 @@ class Facial:
     def add_target_label(self, name):
         self.target_labels += ['{}_x'.format(name), '{}_y'.format(name)]
 
-    def save_images(self):
+    def save_images(self, train_mode=True):
+        if train_mode:
+            predictions = None
+        else:
+            predictions = pd.read_csv(PREDICTIONS_PATH, dtype={'Index': str}, index_col='Index')
+
         for i, row in self.df.iterrows():
             pixels = self.get_pixels(row)
             image = np.reshape(pixels, (IMAGE_SIZE, IMAGE_SIZE))
             plt.imsave("{}/{}.png".format(IMAGES_PATH, i), image)
             labels_iter = iter(self.target_labels)
+
+            if train_mode:
+                points_row = row
+            else:
+                points_row = predictions.iloc[i]
+
             for x_label, y_label in zip(labels_iter, labels_iter):
-                x = int(row[x_label])
-                y = int(row[y_label])
+                x = int(points_row[x_label])
+                y = int(points_row[y_label])
                 image[y][x] = 255
             plt.imsave("{}/{}_points.png".format(IMAGES_PATH, i), image)
 
@@ -148,6 +160,8 @@ class Facial:
             key = "row{}".format(image)
             prediction_row = predictions.loc[key]
             location = prediction_row[label]
+            location = max(0, location)
+            location = min(96, location)
             lookup.loc[i, 'Location'] = location
 
         lookup[["Location"]].to_csv(SUBMISSION_PATH)
@@ -161,16 +175,17 @@ class Facial:
 
 
 def train():
-    f = Facial(max_rows=None)
+    f = Facial(max_rows=100)
     # f.display_missing_values()
     # f.save_images()
     f.build_model()
 
 
 def predict():
-    f = Facial(path=TEST_PATH, train_mode=False, max_rows=None)
-    f.predict()
-    f.submit()
+    f = Facial(path=TEST_PATH, train_mode=False, max_rows=10)
+    # f.predict()
+    f.save_images(train_mode=False)
+    # f.submit()
 
 
 # train()
