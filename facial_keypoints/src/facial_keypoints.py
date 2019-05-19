@@ -29,11 +29,12 @@ class Facial:
         self.target_labels = []
         self.build_target_labels()
         if target_labels_index is not None:
-            self.target_labels = self.target_labels[target_labels_index * 2:target_labels_index * 2 + 1]
+            self.target_labels = self.target_labels[target_labels_index * 2:target_labels_index * 2 + 2]
             self.name = self.target_labels[0]
         else:
             self.name = 'all'
 
+        debug(self.target_labels)
         pathlib.Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
         pathlib.Path("{}/{}".format(IMAGES_PATH, self.name)).mkdir(parents=True, exist_ok=True)
         pathlib.Path(MODELS_PATH).mkdir(parents=True, exist_ok=True)
@@ -45,8 +46,13 @@ class Facial:
     def model_path(self):
         return "{}/{}.dat".format(MODELS_PATH, self.name)
 
-    def predictions_path(self):
-        return "{}/{}.csv".format(PREDICTIONS_PATH, self.name)
+    def predictions_path(self, name_override=None):
+        if name_override is None:
+            use = self.name
+        else:
+            use = name_override
+
+        return "{}/{}.csv".format(PREDICTIONS_PATH, use)
 
     def build_target_labels(self):
         bilateral = ['DDD_eye_center', 'DDD_eye_inner_corner', 'DDD_eye_outer_corner', 'DDD_eyebrow_inner_end',
@@ -97,7 +103,6 @@ class Facial:
         if self.train_mode:
             prepared_columns += self.target_labels
 
-        debug("data prepare iterating rows")
         rows = []
         for i, row in self.df.iterrows():
             if self.train_mode:
@@ -106,18 +111,15 @@ class Facial:
                 new_row = self.get_pixels(row)
             rows.append(new_row)
 
-        debug("data prepare add columns")
         pixels_start_column = len(prepared_columns)
         for pixel_row in range(IMAGE_SIZE):
             for pixel_col in range(IMAGE_SIZE):
                 prepared_columns.append("p{}_{}".format(pixel_row, pixel_col))
 
-        debug("data prepare create df")
         df = pd.DataFrame(rows, columns=prepared_columns)
 
         num_images = df.shape[0]
 
-        debug("data prepare prepare result")
         x_as_array = df.values[:, pixels_start_column:]
         x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE)
         out_x = x_shaped_array / 255
@@ -131,7 +133,7 @@ class Facial:
         debug("data prepare done")
         return out_x, out_y
 
-    def build_model(self):
+    def build_model(self, epochs=500):
         x, y = self.data_prepare()
         debug("build model")
 
@@ -147,7 +149,7 @@ class Facial:
                       metrics=['mae', 'accuracy'])
         model.fit(x, y,
                   batch_size=128,
-                  epochs=500,
+                  epochs=epochs,
                   validation_split=0.2)
 
         model.save(self.model_path())
@@ -155,7 +157,6 @@ class Facial:
     def predict(self):
         debug("predict start")
         model = keras.models.load_model(self.model_path())
-        print(model.summary())
         x, y = self.data_prepare()
 
         predictions = model.predict(x).tolist()
@@ -167,14 +168,24 @@ class Facial:
 
     def submit(self, max_rows=None):
         debug("submit starting")
-        predictions = pd.read_csv(self.predictions_path(), dtype={'Index': str}, index_col='Index')
+
+        joined_predictions = None
+        for target_index in range(0, len(self.target_labels), 2):
+            print(joined_predictions)
+            label = self.target_labels[target_index]
+            predictions = pd.read_csv(self.predictions_path(label), dtype={'Index': str}, index_col='Index')
+            if joined_predictions is None:
+                joined_predictions = predictions
+            else:
+                joined_predictions = pd.merge(joined_predictions, predictions, on='Index')
+
 
         lookup = pd.read_csv(LOOKUP_PATH, nrows=max_rows, dtype={'ImageId': str, 'RowId': str}, index_col='RowId')
         for i, row in lookup.iterrows():
             image = row['ImageId']
             label = row['FeatureName']
             key = "row{}".format(image)
-            prediction_row = predictions.loc[key]
+            prediction_row = joined_predictions.loc[key]
             location = prediction_row[label]
             location = max(0, location)
             location = min(96, location)
@@ -190,15 +201,20 @@ class Facial:
         print(str(missing_data))
 
 
-for target_labels_index in range(15):
-    train_rows = 200
-    predict_rows = None
+for target_labels_index in range(14, 15):
+    # TODO: we get nan for index 14
+    train_rows = 500
+    predict_rows = 10
+    epochs = 500
+
     f = Facial(max_rows=train_rows, target_labels_index=target_labels_index)
     # f.display_missing_values()
     # f.save_images()
-    f.build_model()
+    f.build_model(epochs=epochs)
 
     f = Facial(path=TEST_PATH, train_mode=False, max_rows=predict_rows, target_labels_index=target_labels_index)
     f.predict()
     f.save_images(train_mode=False)
-    # f.submit()
+
+# f = Facial(path=TEST_PATH, train_mode=False, max_rows=1)
+# f.submit()
