@@ -42,6 +42,10 @@ class Facial:
         debug("loading csv from {} starting".format(path))
         self.df = pd.read_csv(path, nrows=max_rows)
         debug("loading csv done, loaded {} rows".format(self.df.shape[0]))
+        if train_mode and target_labels_index is not None:
+            for l in self.target_labels:
+                self.df = self.df.dropna(subset=[l])
+            debug("after empty values cleanup {} rows".format(self.df.shape[0]))
 
     def model_path(self):
         return "{}/{}.dat".format(MODELS_PATH, self.name)
@@ -179,7 +183,6 @@ class Facial:
             else:
                 joined_predictions = pd.merge(joined_predictions, predictions, on='Index')
 
-
         lookup = pd.read_csv(LOOKUP_PATH, nrows=max_rows, dtype={'ImageId': str, 'RowId': str}, index_col='RowId')
         for i, row in lookup.iterrows():
             image = row['ImageId']
@@ -201,20 +204,21 @@ class Facial:
         print(str(missing_data))
 
 
-for target_labels_index in range(14, 15):
-    # TODO: we get nan for index 14
-    train_rows = 500
+# f = Facial()
+# f.display_missing_values()
+
+
+for target_labels_index in range(15):
+    train_rows = None
     predict_rows = 10
     epochs = 500
 
     f = Facial(max_rows=train_rows, target_labels_index=target_labels_index)
-    # f.display_missing_values()
-    # f.save_images()
     f.build_model(epochs=epochs)
 
     f = Facial(path=TEST_PATH, train_mode=False, max_rows=predict_rows, target_labels_index=target_labels_index)
     f.predict()
     f.save_images(train_mode=False)
 
-# f = Facial(path=TEST_PATH, train_mode=False, max_rows=1)
-# f.submit()
+f = Facial(path=TEST_PATH, train_mode=False, max_rows=1)
+f.submit()
