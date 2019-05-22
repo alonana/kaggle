@@ -210,15 +210,15 @@ class Facial:
 
 for target_labels_index in range(15):
     train_rows = None
-    predict_rows = 10
+    predict_rows = None
     epochs = 500
 
-    f = Facial(max_rows=train_rows, target_labels_index=target_labels_index)
-    f.build_model(epochs=epochs)
+    # f = Facial(max_rows=train_rows, target_labels_index=target_labels_index)
+    # f.build_model(epochs=epochs)
 
     f = Facial(path=TEST_PATH, train_mode=False, max_rows=predict_rows, target_labels_index=target_labels_index)
     f.predict()
-    f.save_images(train_mode=False)
+    # f.save_images(train_mode=False)
 
 f = Facial(path=TEST_PATH, train_mode=False, max_rows=1)
 f.submit()
