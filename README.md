@@ -18,6 +18,7 @@ pip install scikit-learn
 pip install seaborn
 pip install xgboost
 pip install statsmodels
+pip install Pillow
 
 
 # What have I learned?
