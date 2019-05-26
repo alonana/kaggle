@@ -5,17 +5,24 @@ from os.path import join
 
 import pandas as pd
 from PIL import Image
+from tensorflow.python import keras
+from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
+from tensorflow.python.keras.models import Sequential
 
 IMAGE_SIZE = 20
 
 DATA_PATH = '../data'
 OUTPUT_PATH = '../output'
 GRAY_SCALE_PATH = '{}/gray_scale'.format(OUTPUT_PATH)
+MODEL_PATH = "{}/model.dat".format(OUTPUT_PATH)
 
 
 # TODO; convert to grayscale
-def debug(msg):
-    print("{} ===> {}".format(datetime.now(), msg))
+def debug(msg, new_line=False):
+    separator = ''
+    if new_line:
+        separator = '\n'
+    print("{} ===> {}{}".format(datetime.now(), separator, msg))
 
 
 class StreetChars:
@@ -26,8 +33,14 @@ class StreetChars:
         if scratch:
             self.convert_to_gray_scale(folder)
             self.create_input_dataframe_from_gray_scale(folder)
-        self.df = pd.read_csv('{}/{}.csv'.format(OUTPUT_PATH, folder))
-        self.data_prepare()
+        path = '{}/{}.csv'.format(OUTPUT_PATH, folder)
+        self.df = pd.read_csv(path, index_col=0)
+        self.labels = pd.read_csv('{}/trainLabels.csv'.format(DATA_PATH), index_col=0)
+        self.classes = list(self.labels['Class'].unique())
+        self.classes.sort()
+        self.number_of_classes = len(self.classes)
+        if not train_mode:
+            self.labels = None
 
     def convert_to_gray_scale(self, folder_name):
         debug("covert to gray scale")
@@ -62,17 +75,72 @@ class StreetChars:
         num_images = self.df.shape[0]
 
         x_as_array = self.df.values
-        x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE)
+        x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
         out_x = x_shaped_array / 255
 
         if self.train_mode:
-            labels = pd.read_csv('{}/trainLabels.csv'.format(DATA_PATH))
-            out_y = labels.values[:, 1:1]
+            out_y = pd.get_dummies(self.labels['Class']).values
         else:
             out_y = None
 
         debug("data prepare done")
         return out_x, out_y
 
+    def build_model(self, epochs=10):
+        x, y = self.data_prepare()
+        debug("build model")
 
-chars = StreetChars("trainResized", scratch=False)
+        model = Sequential()
+        model.add(Conv2D(IMAGE_SIZE,
+                         kernel_size=(3, 3),
+                         activation='relu',
+                         input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
+        model.add(Conv2D(IMAGE_SIZE, kernel_size=(3, 3), activation='relu'))
+        model.add(Flatten())
+        model.add(Dense(128, activation='relu'))
+        model.add(Dense(self.number_of_classes, activation='softmax'))
+
+        model.compile(loss=keras.losses.categorical_crossentropy,
+                      optimizer='adam',
+                      metrics=['accuracy'])
+        model.fit(x, y,
+                  batch_size=32,
+                  epochs=epochs,
+                  validation_split=0.2)
+
+        model.save(MODEL_PATH)
+
+    def get_predictions_from_probabilities(self, predictions_probabilities):
+        predictions = []
+        for probabilities in predictions_probabilities:
+            c = probabilities.index(max(probabilities))
+            predictions.append(c)
+        return predictions
+
+    def predict(self):
+        debug("predict start")
+        model = keras.models.load_model(MODEL_PATH)
+        x, y = self.data_prepare()
+
+        debug("make predictions")
+        predictions_probabilities = model.predict(x).tolist()
+        debug("locate wrongs")
+        predictions = self.get_predictions_from_probabilities(predictions_probabilities)
+        labels = []
+        for label in y.tolist():
+            c = label.index(max(label))
+            labels.append(c)
+        debug(predictions)
+        debug(labels)
+        wrongs = []
+        for index, label in enumerate(labels):
+            if label != predictions[index]:
+                wrongs.append((index, predictions_probabilities[index]))
+        debug("{} wrongs: {}".format(len(wrongs), wrongs))
+
+
+charsTrain = StreetChars("trainResized", scratch=False)
+# charsTrain.build_model()
+charsTrain.predict()
+
+# charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
