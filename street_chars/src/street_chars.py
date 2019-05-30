@@ -1,4 +1,5 @@
 import pathlib
+import pickle
 from datetime import datetime
 from os import listdir
 from os.path import join
@@ -6,18 +7,18 @@ from os.path import join
 import pandas as pd
 from PIL import Image
 from tensorflow.python import keras
-from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
+from tensorflow.python.keras.layers import Dense, Flatten, Conv2D, Dropout
 from tensorflow.python.keras.models import Sequential
 
 IMAGE_SIZE = 20
 
 DATA_PATH = '../data'
 OUTPUT_PATH = '../output'
+CLASSES_PATH = '{}/classes.dat'.format(OUTPUT_PATH)
 GRAY_SCALE_PATH = '{}/gray_scale'.format(OUTPUT_PATH)
 MODEL_PATH = "{}/model.dat".format(OUTPUT_PATH)
 
 
-# TODO; convert to grayscale
 def debug(msg, new_line=False):
     separator = ''
     if new_line:
@@ -35,12 +36,22 @@ class StreetChars:
             self.create_input_dataframe_from_gray_scale(folder)
         path = '{}/{}.csv'.format(OUTPUT_PATH, folder)
         self.df = pd.read_csv(path, index_col=0)
-        self.labels = pd.read_csv('{}/trainLabels.csv'.format(DATA_PATH), index_col=0)
-        self.classes = list(self.labels['Class'].unique())
-        self.classes.sort()
-        self.number_of_classes = len(self.classes)
-        if not train_mode:
+        if train_mode:
+            self.labels = pd.read_csv('{}/trainLabels.csv'.format(DATA_PATH), index_col=0)
+            self.classes = list(self.labels['Class'].unique())
+            self.classes.sort()
+            self.number_of_classes = len(self.classes)
+            with open(CLASSES_PATH, "wb") as fp:
+                pickle.dump(self.classes, fp)
+            debug("{} classes located".format(len(self.classes)))
+        else:
             self.labels = None
+            with open(CLASSES_PATH, "rb") as fp:
+                self.classes = pickle.load(fp)
+
+    def print_samples_per_class(self):
+        pd.set_option('display.max_rows', 500)
+        debug("frequencies:\n{}".format(self.labels.Class.value_counts()))
 
     def convert_to_gray_scale(self, folder_name):
         debug("covert to gray scale")
@@ -91,13 +102,24 @@ class StreetChars:
         debug("build model")
 
         model = Sequential()
+
         model.add(Conv2D(IMAGE_SIZE,
                          kernel_size=(3, 3),
                          activation='relu',
                          input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
-        model.add(Conv2D(IMAGE_SIZE, kernel_size=(3, 3), activation='relu'))
+
+        model.add(Conv2D(IMAGE_SIZE,
+                         kernel_size=(3, 3),
+                         activation='relu'))
+
         model.add(Flatten())
+
         model.add(Dense(128, activation='relu'))
+
+        model.add(Dropout(0.1))
+
+        model.add(Dense(64, activation='relu'))
+
         model.add(Dense(self.number_of_classes, activation='softmax'))
 
         model.compile(loss=keras.losses.categorical_crossentropy,
@@ -124,23 +146,41 @@ class StreetChars:
 
         debug("make predictions")
         predictions_probabilities = model.predict(x).tolist()
-        debug("locate wrongs")
         predictions = self.get_predictions_from_probabilities(predictions_probabilities)
+        predictions_classes = [self.classes[x] for x in predictions]
+        return predictions_classes, y
+
+    def predict_train(self):
+        predictions_classes, y = self.predict()
         labels = []
         for label in y.tolist():
             c = label.index(max(label))
             labels.append(c)
-        debug(predictions)
-        debug(labels)
+        labels_classes = [self.classes[x] for x in labels]
+        debug("predictions: {}".format(predictions_classes))
+        debug("labels     : {}".format(labels_classes))
+
+        debug("locate wrongs")
         wrongs = []
-        for index, label in enumerate(labels):
-            if label != predictions[index]:
-                wrongs.append((index, predictions_probabilities[index]))
+        for index, label in enumerate(labels_classes):
+            if label != predictions_classes[index]:
+                wrongs.append((index, predictions_classes[index]))
         debug("{} wrongs: {}".format(len(wrongs), wrongs))
+
+    def submit(self):
+        debug("submit start")
+        predictions_classes, y = self.predict()
+        debug("predictions: {}".format(predictions_classes))
+        submission = pd.read_csv('{}/sampleSubmission.csv'.format(DATA_PATH), index_col=0)
+        submission.drop("Class", inplace=True, axis=1)
+        submission["Class"] = predictions_classes
+        submission.to_csv('{}/submission.csv'.format(OUTPUT_PATH))
 
 
 charsTrain = StreetChars("trainResized", scratch=False)
-# charsTrain.build_model()
-charsTrain.predict()
+charsTrain.print_samples_per_class()
+charsTrain.build_model(epochs=500)
+charsTrain.predict_train()
 
-# charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
+charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
+charsPredict.submit()
