@@ -7,7 +7,7 @@ from os.path import join
 import pandas as pd
 from PIL import Image
 from tensorflow.python import keras
-from tensorflow.python.keras.layers import Dense, Flatten, Conv2D, Dropout
+from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
 from tensorflow.python.keras.models import Sequential
 
 IMAGE_SIZE = 20
@@ -38,6 +38,9 @@ class StreetChars:
         self.df = pd.read_csv(path, index_col=0)
         if train_mode:
             self.labels = pd.read_csv('{}/trainLabels.csv'.format(DATA_PATH), index_col=0)
+
+            self.remove_infrequent()
+
             self.classes = list(self.labels['Class'].unique())
             self.classes.sort()
             self.number_of_classes = len(self.classes)
@@ -49,9 +52,23 @@ class StreetChars:
             with open(CLASSES_PATH, "rb") as fp:
                 self.classes = pickle.load(fp)
 
+    def remove_infrequent(self):
+        infrequent = self.print_samples_per_class()
+        remove_rows = []
+        for i, row in self.labels.iterrows():
+            if row['Class'] in infrequent:
+                remove_rows.append(i - 1)
+
+        self.labels.drop(self.labels.index[remove_rows], inplace=True)
+        self.df.drop(self.df.index[remove_rows], inplace=True)
+        debug("{} rows after removal".format(self.df.shape[0]))
+        self.print_samples_per_class()
+
     def print_samples_per_class(self):
         pd.set_option('display.max_rows', 500)
-        debug("frequencies:\n{}".format(self.labels.Class.value_counts()))
+        counts = self.labels.Class.value_counts()
+        # debug("frequencies:\n{}".format(counts))
+        return [c for c in counts[counts < 200].index]
 
     def convert_to_gray_scale(self, folder_name):
         debug("covert to gray scale")
@@ -103,12 +120,12 @@ class StreetChars:
 
         model = Sequential()
 
-        model.add(Conv2D(IMAGE_SIZE,
+        model.add(Conv2D(20,
                          kernel_size=(3, 3),
                          activation='relu',
                          input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
 
-        model.add(Conv2D(IMAGE_SIZE,
+        model.add(Conv2D(20,
                          kernel_size=(3, 3),
                          activation='relu'))
 
@@ -116,15 +133,16 @@ class StreetChars:
 
         model.add(Dense(128, activation='relu'))
 
-        model.add(Dropout(0.1))
+        # model.add(Dropout(0.1))
 
-        model.add(Dense(64, activation='relu'))
+        # model.add(Dense(64, activation='relu'))
 
         model.add(Dense(self.number_of_classes, activation='softmax'))
 
         model.compile(loss=keras.losses.categorical_crossentropy,
                       optimizer='adam',
                       metrics=['accuracy'])
+
         model.fit(x, y,
                   batch_size=32,
                   epochs=epochs,
@@ -163,8 +181,9 @@ class StreetChars:
         debug("locate wrongs")
         wrongs = []
         for index, label in enumerate(labels_classes):
-            if label != predictions_classes[index]:
-                wrongs.append((index, predictions_classes[index]))
+            predicted = predictions_classes[index]
+            if label != predicted:
+                wrongs.append("{}={} !{}".format(index, label, predicted))
         debug("{} wrongs: {}".format(len(wrongs), wrongs))
 
     def submit(self):
@@ -178,9 +197,8 @@ class StreetChars:
 
 
 charsTrain = StreetChars("trainResized", scratch=False)
-charsTrain.print_samples_per_class()
-charsTrain.build_model(epochs=500)
+# charsTrain.build_model(epochs=20)
 charsTrain.predict_train()
 
-charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
-charsPredict.submit()
+# charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
+# charsPredict.submit()
