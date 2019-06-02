@@ -1,5 +1,6 @@
 import pathlib
 import pickle
+import re
 from datetime import datetime
 from os import listdir
 from os.path import join
@@ -46,11 +47,14 @@ class StreetChars:
             self.number_of_classes = len(self.classes)
             with open(CLASSES_PATH, "wb") as fp:
                 pickle.dump(self.classes, fp)
-            debug("{} classes located".format(len(self.classes)))
+            debug("{} classes located: {}".format(len(self.classes), self.classes))
         else:
             self.labels = None
             with open(CLASSES_PATH, "rb") as fp:
                 self.classes = pickle.load(fp)
+        head_size = 2
+        debug("row example\n{}".format(self.df.head(2)))
+        debug("row example\n{}".format(self.labels.head(2)))
 
     def remove_infrequent(self):
         infrequent = self.print_samples_per_class()
@@ -66,6 +70,8 @@ class StreetChars:
 
     def print_samples_per_class(self):
         pd.set_option('display.max_rows', 500)
+        pd.set_option('display.max_columns', 500)
+        pd.set_option('display.width', 5000)
         counts = self.labels.Class.value_counts()
         # debug("frequencies:\n{}".format(counts))
         return [c for c in counts[counts < 200].index]
@@ -81,19 +87,30 @@ class StreetChars:
             image = image.convert('L')
             image.save('{}/{}'.format(output_folder, f))
 
+    def tryint(self, s):
+        try:
+            return int(s)
+        except:
+            return s
+
+    def alphanum_key(self, s):
+        # Turn a string into a list of string and number chunks.            "z23a" -> ["z", 23, "a"]
+        return [self.tryint(c) for c in re.split('([0-9]+)', s)]
+
     def create_input_dataframe_from_gray_scale(self, folder_name):
         debug("create inputs from images")
         folder_path = '{}/{}'.format(GRAY_SCALE_PATH, folder_name)
         images = []
-        for f in listdir(folder_path):
+        sorted_files = listdir(folder_path)
+        sorted_files.sort(key=self.alphanum_key)
+        for f in sorted_files:
             file_path = join(folder_path, f)
             image = Image.open(file_path)
-            image_pixels = []
+            image_pixels = [f]
             for p in list(image.getdata()):
                 image_pixels.append(p)
             images.append(image_pixels)
         debug("loaded {} images, each contains {} inputs".format(len(images), len((images[0]))))
-        debug("first row {}".format(images[0]))
         df = pd.DataFrame(images)
         df.to_csv('{}/{}.csv'.format(OUTPUT_PATH, folder_name))
 
@@ -102,7 +119,7 @@ class StreetChars:
 
         num_images = self.df.shape[0]
 
-        x_as_array = self.df.values
+        x_as_array = self.df.iloc[:, 1:].values
         x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
         out_x = x_shaped_array / 255
 
@@ -181,9 +198,10 @@ class StreetChars:
         debug("locate wrongs")
         wrongs = []
         for index, label in enumerate(labels_classes):
+            file = self.df.iloc[index][0]
             predicted = predictions_classes[index]
             if label != predicted:
-                wrongs.append("{}={} !{}".format(index, label, predicted))
+                wrongs.append("{}={} !{}".format(file, label, predicted))
         debug("{} wrongs: {}".format(len(wrongs), wrongs))
 
     def submit(self):
@@ -197,8 +215,8 @@ class StreetChars:
 
 
 charsTrain = StreetChars("trainResized", scratch=False)
-# charsTrain.build_model(epochs=20)
+charsTrain.build_model(epochs=30)
 charsTrain.predict_train()
 
-# charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
+# charsPredict = StreetChars("testResized", scratch=True, train_mode=False)
 # charsPredict.submit()
