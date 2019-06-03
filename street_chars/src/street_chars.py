@@ -12,6 +12,7 @@ from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
 from tensorflow.python.keras.models import Sequential
 
 IMAGE_SIZE = 20
+COUNT_THRESHOLD = 0
 
 DATA_PATH = '../data'
 OUTPUT_PATH = '../output'
@@ -53,8 +54,9 @@ class StreetChars:
             with open(CLASSES_PATH, "rb") as fp:
                 self.classes = pickle.load(fp)
         head_size = 2
-        debug("row example\n{}".format(self.df.head(2)))
-        debug("row example\n{}".format(self.labels.head(2)))
+        debug("row example\n{}".format(self.df.head(head_size)))
+        if self.labels is not None:
+            debug("labels example\n{}".format(self.labels.head(head_size)))
 
     def remove_infrequent(self):
         infrequent = self.print_samples_per_class()
@@ -73,8 +75,8 @@ class StreetChars:
         pd.set_option('display.max_columns', 500)
         pd.set_option('display.width', 5000)
         counts = self.labels.Class.value_counts()
-        # debug("frequencies:\n{}".format(counts))
-        return [c for c in counts[counts < 200].index]
+        debug("frequencies:\n{}".format(counts))
+        return [c for c in counts[counts < COUNT_THRESHOLD].index]
 
     def convert_to_gray_scale(self, folder_name):
         debug("covert to gray scale")
@@ -150,10 +152,6 @@ class StreetChars:
 
         model.add(Dense(128, activation='relu'))
 
-        # model.add(Dropout(0.1))
-
-        # model.add(Dense(64, activation='relu'))
-
         model.add(Dense(self.number_of_classes, activation='softmax'))
 
         model.compile(loss=keras.losses.categorical_crossentropy,
@@ -202,7 +200,7 @@ class StreetChars:
             predicted = predictions_classes[index]
             if label != predicted:
                 wrongs.append("{}={} !{}".format(file, label, predicted))
-        debug("{} wrongs: {}".format(len(wrongs), wrongs))
+        debug("{} wrongs out of {}: {}".format(len(wrongs), len(labels_classes), wrongs))
 
     def submit(self):
         debug("submit start")
@@ -218,5 +216,5 @@ charsTrain = StreetChars("trainResized", scratch=False)
 charsTrain.build_model(epochs=30)
 charsTrain.predict_train()
 
-# charsPredict = StreetChars("testResized", scratch=True, train_mode=False)
-# charsPredict.submit()
+charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
+charsPredict.submit()
