@@ -19,7 +19,7 @@ pip install seaborn
 pip install xgboost
 pip install statsmodels
 pip install Pillow
-
+pip install scikit-image
 
 # What have I learned?
 

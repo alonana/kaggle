@@ -7,6 +7,7 @@ from os.path import join
 
 import pandas as pd
 from PIL import Image
+from augmentation import combined_random
 from tensorflow.python import keras
 from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
 from tensorflow.python.keras.models import Sequential
@@ -75,7 +76,7 @@ class StreetChars:
         pd.set_option('display.max_columns', 500)
         pd.set_option('display.width', 5000)
         counts = self.labels.Class.value_counts()
-        debug("frequencies:\n{}".format(counts))
+        # debug("frequencies:\n{}".format(counts))
         return [c for c in counts[counts < COUNT_THRESHOLD].index]
 
     def convert_to_gray_scale(self, folder_name):
@@ -122,7 +123,11 @@ class StreetChars:
         num_images = self.df.shape[0]
 
         x_as_array = self.df.iloc[:, 1:].values
+        x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE)
+        for i in range(num_images):
+            x_shaped_array[i] = combined_random(x_shaped_array[i])
         x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
+
         out_x = x_shaped_array / 255
 
         if self.train_mode:
@@ -133,35 +138,34 @@ class StreetChars:
         debug("data prepare done")
         return out_x, out_y
 
-    def build_model(self, epochs=10):
-        x, y = self.data_prepare()
-        debug("build model")
-
+    def create_layers(self):
         model = Sequential()
-
         model.add(Conv2D(20,
                          kernel_size=(3, 3),
                          activation='relu',
                          input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
-
         model.add(Conv2D(20,
                          kernel_size=(3, 3),
                          activation='relu'))
-
         model.add(Flatten())
-
         model.add(Dense(128, activation='relu'))
-
         model.add(Dense(self.number_of_classes, activation='softmax'))
-
         model.compile(loss=keras.losses.categorical_crossentropy,
                       optimizer='adam',
                       metrics=['accuracy'])
+        return model
 
-        model.fit(x, y,
-                  batch_size=32,
-                  epochs=epochs,
-                  validation_split=0.2)
+    def build_model(self, epochs=10):
+        debug("build model")
+
+        model = self.create_layers()
+
+        for _ in range(epochs):
+            x, y = self.data_prepare()
+            model.fit(x, y,
+                      batch_size=32,
+                      epochs=1,
+                      validation_split=0.2)
 
         model.save(MODEL_PATH)
 
@@ -213,8 +217,8 @@ class StreetChars:
 
 
 charsTrain = StreetChars("trainResized", scratch=False)
-charsTrain.build_model(epochs=30)
-charsTrain.predict_train()
-
-charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
-charsPredict.submit()
+charsTrain.build_model(epochs=300)
+# charsTrain.predict_train()
+#
+# charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
+# charsPredict.submit()
