@@ -188,6 +188,7 @@ class StreetChars:
         plt.plot(val_acc, color='red', label='val_acc')
         plt.legend()
         fig.savefig(OUTPUT_PATH + "/accuracy.png")
+        plt.close(fig)
 
     def get_predictions_from_probabilities(self, predictions_probabilities):
         predictions = []
