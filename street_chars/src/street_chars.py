@@ -5,6 +5,7 @@ from datetime import datetime
 from os import listdir
 from os.path import join
 
+import matplotlib.pyplot as plt
 import pandas as pd
 from PIL import Image
 from augmentation import combined_random
@@ -140,16 +141,22 @@ class StreetChars:
 
     def create_layers(self):
         model = Sequential()
+
         model.add(Conv2D(20,
                          kernel_size=(3, 3),
                          activation='relu',
                          input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
+
         model.add(Conv2D(20,
                          kernel_size=(3, 3),
                          activation='relu'))
+
         model.add(Flatten())
-        model.add(Dense(128, activation='relu'))
+
+        model.add(Dense(256, activation='relu'))
+
         model.add(Dense(self.number_of_classes, activation='softmax'))
+
         model.compile(loss=keras.losses.categorical_crossentropy,
                       optimizer='adam',
                       metrics=['accuracy'])
@@ -160,14 +167,27 @@ class StreetChars:
 
         model = self.create_layers()
 
-        for _ in range(epochs):
+        val_acc = []
+        acc = []
+        for i in range(epochs):
+            debug("epoch {}".format(i))
             x, y = self.data_prepare()
-            model.fit(x, y,
-                      batch_size=32,
-                      epochs=1,
-                      validation_split=0.2)
+            history = model.fit(x, y,
+                                batch_size=32,
+                                epochs=1,
+                                validation_split=0.2)
+            acc.append(history.history['acc'])
+            val_acc.append(history.history['val_acc'])
+            self.save_accuracy_graph(acc, val_acc)
 
         model.save(MODEL_PATH)
+
+    def save_accuracy_graph(self, acc, val_acc):
+        fig, ax = plt.subplots(figsize=(15, 12))
+        plt.plot(acc, color='blue', label='acc')
+        plt.plot(val_acc, color='red', label='val_acc')
+        plt.legend()
+        fig.savefig(OUTPUT_PATH + "/accuracy.png")
 
     def get_predictions_from_probabilities(self, predictions_probabilities):
         predictions = []
@@ -217,8 +237,8 @@ class StreetChars:
 
 
 charsTrain = StreetChars("trainResized", scratch=False)
-charsTrain.build_model(epochs=300)
-# charsTrain.predict_train()
+charsTrain.build_model(epochs=500)
+charsTrain.predict_train()
 #
 # charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
 # charsPredict.submit()
