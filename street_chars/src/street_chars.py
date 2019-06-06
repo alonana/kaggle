@@ -140,14 +140,21 @@ class StreetChars:
         return out_x, out_y
 
     def create_layers(self):
+        # TODO: see https://towardsdatascience.com/convolutional-neural-networks-for-beginners-practical-guide-with-python-and-keras-dc688ea90dca
+        # TODO: see https://towardsdatascience.com/a-guide-to-an-efficient-way-to-build-neural-network-architectures-part-ii-hyper-parameter-42efca01e5d7
+        # But: Most chances are that augmentation should be fixed
         model = Sequential()
 
-        model.add(Conv2D(20,
+        model.add(Conv2D(32,
                          kernel_size=(3, 3),
                          activation='relu',
                          input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
 
-        model.add(Conv2D(20,
+        model.add(Conv2D(64,
+                         kernel_size=(3, 3),
+                         activation='relu'))
+
+        model.add(Conv2D(128,
                          kernel_size=(3, 3),
                          activation='relu'))
 
