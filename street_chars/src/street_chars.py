@@ -10,11 +10,11 @@ import pandas as pd
 from PIL import Image
 from augmentation import combined_random
 from tensorflow.python import keras
-from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
+from tensorflow.python.keras import layers
 from tensorflow.python.keras.models import Sequential
 
 IMAGE_SIZE = 20
-COUNT_THRESHOLD = 0
+COUNT_THRESHOLD = 200
 
 DATA_PATH = '../data'
 OUTPUT_PATH = '../output'
@@ -127,7 +127,7 @@ class StreetChars:
         x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE)
         for i in range(num_images):
             x_shaped_array[i] = combined_random(x_shaped_array[i])
-        x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
+        x_shaped_array = x_shaped_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
 
         out_x = x_shaped_array / 255
 
@@ -140,33 +140,35 @@ class StreetChars:
         return out_x, out_y
 
     def create_layers(self):
-        # TODO: see https://towardsdatascience.com/convolutional-neural-networks-for-beginners-practical-guide-with-python-and-keras-dc688ea90dca
-        # TODO: see https://towardsdatascience.com/a-guide-to-an-efficient-way-to-build-neural-network-architectures-part-ii-hyper-parameter-42efca01e5d7
-        # But: Most chances are that augmentation should be fixed
         model = Sequential()
 
-        model.add(Conv2D(32,
-                         kernel_size=(3, 3),
-                         activation='relu',
-                         input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
+        model.add(layers.Conv2D(32,
+                                kernel_size=(3, 3),
+                                activation='relu',
+                                input_shape=(IMAGE_SIZE, IMAGE_SIZE, 1)))
 
-        model.add(Conv2D(64,
-                         kernel_size=(3, 3),
-                         activation='relu'))
+        model.add(layers.MaxPooling2D((2, 2)))
 
-        model.add(Conv2D(128,
+        model.add(layers.Conv2D(64,
                          kernel_size=(3, 3),
                          activation='relu'))
 
-        model.add(Flatten())
+        model.add(layers.MaxPooling2D((2, 2)))
 
-        model.add(Dense(256, activation='relu'))
+        model.add(layers.Conv2D(128,
+                         kernel_size=(3, 3),
+                         activation='relu'))
 
-        model.add(Dense(self.number_of_classes, activation='softmax'))
+        model.add(layers.Flatten())
+
+        model.add(layers.Dense(256, activation='relu'))
+
+        model.add(layers.Dense(self.number_of_classes, activation='softmax'))
 
         model.compile(loss=keras.losses.categorical_crossentropy,
                       optimizer='adam',
                       metrics=['accuracy'])
+        debug(model.summary())
         return model
 
     def build_model(self, epochs=10):
@@ -232,7 +234,8 @@ class StreetChars:
             predicted = predictions_classes[index]
             if label != predicted:
                 wrongs.append("{}={} !{}".format(file, label, predicted))
-        debug("{} wrongs out of {}: {}".format(len(wrongs), len(labels_classes), wrongs))
+        percent = 100 * len(wrongs) // len(labels_classes)
+        debug("{}% = {} wrongs out of {}: {}".format(percent, len(wrongs), len(labels_classes), wrongs))
 
     def submit(self):
         debug("submit start")
@@ -245,7 +248,7 @@ class StreetChars:
 
 
 charsTrain = StreetChars("trainResized", scratch=False)
-charsTrain.build_model(epochs=500)
+charsTrain.build_model(epochs=100)
 charsTrain.predict_train()
 #
 # charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
