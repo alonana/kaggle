@@ -19,8 +19,8 @@ def same(pixels):
 
 def warp(pixels):
     size = pixels.shape[0]
-    # random rotations between -10 and 10 degrees
-    dorotate = randint(-50, 50)
+    # random rotations
+    dorotate = randint(-10, 10)
 
     # random translations -
     # trans_1 = randint(-10, 10)
@@ -69,7 +69,7 @@ def edges(pixels):
 
 
 def combined_random(pixels):
-    if randint(0, 1) == 0:
+    if randint(0, 10) > 3:
         pixels = warp(pixels)
 
     my_rand = randint(0, 3)
@@ -94,8 +94,8 @@ def augment(file_path, output_name, *methods):
     result.save('{}/{}.bmp'.format(OUTPUT_PATH, output_name))
     return pixels
 
-
-np.set_printoptions(linewidth=1000)
-
-for i in range(10):
-    augment(ORIGINAL_PATH, "aug{}".format(i), combined_random)
+# np.set_printoptions(linewidth=1000)
+#
+# for i in range(10):
+#     print("image", i)
+#     augment(ORIGINAL_PATH, "aug{}".format(i), combined_random)

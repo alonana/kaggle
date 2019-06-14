@@ -14,7 +14,7 @@ from tensorflow.python.keras import layers
 from tensorflow.python.keras.models import Sequential
 
 IMAGE_SIZE = 20
-COUNT_THRESHOLD = 200
+COUNT_THRESHOLD = 0
 
 DATA_PATH = '../data'
 OUTPUT_PATH = '../output'
@@ -31,8 +31,9 @@ def debug(msg, new_line=False):
 
 
 class StreetChars:
-    def __init__(self, folder, scratch=False, train_mode=True):
+    def __init__(self, folder, scratch=False, train_mode=True, augment=False):
         self.train_mode = train_mode
+        self.augment = augment
         pathlib.Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
         pathlib.Path(GRAY_SCALE_PATH).mkdir(parents=True, exist_ok=True)
         if scratch:
@@ -125,8 +126,9 @@ class StreetChars:
 
         x_as_array = self.df.iloc[:, 1:].values
         x_shaped_array = x_as_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE)
-        for i in range(num_images):
-            x_shaped_array[i] = combined_random(x_shaped_array[i])
+        if self.augment:
+            for i in range(num_images):
+                x_shaped_array[i] = combined_random(x_shaped_array[i])
         x_shaped_array = x_shaped_array.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, 1)
 
         out_x = x_shaped_array / 255
@@ -247,9 +249,9 @@ class StreetChars:
         submission.to_csv('{}/submission.csv'.format(OUTPUT_PATH))
 
 
-charsTrain = StreetChars("trainResized", scratch=False)
-charsTrain.build_model(epochs=100)
-charsTrain.predict_train()
-#
-# charsPredict = StreetChars("testResized", scratch=False, train_mode=False)
-# charsPredict.submit()
+# charsTrain = StreetChars("trainResized", scratch=False,augment=True)
+# charsTrain.build_model(epochs=100)
+# charsTrain.predict_train()
+
+charsPredict = StreetChars("testResized", scratch=True, train_mode=False)
+charsPredict.submit()
