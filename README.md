@@ -20,6 +20,8 @@ pip install xgboost
 pip install statsmodels
 pip install Pillow
 pip install scikit-image
+pip install BeautifulSoup4
+pip install nltk
 
 # What have I learned?
 
