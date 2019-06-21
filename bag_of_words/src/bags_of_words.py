@@ -1,6 +1,6 @@
-import datetime
 import pathlib
 import re
+from datetime import datetime
 
 import nltk
 import pandas as pd
