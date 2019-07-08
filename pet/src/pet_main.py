@@ -1,3 +1,4 @@
+import json
 import pathlib
 import pickle
 from datetime import datetime
@@ -13,10 +14,14 @@ OUTPUT_FOLDER = "../output/"
 DATA_FOLDER = "../data"
 MODEL_PATH = "%s/model.dat" % OUTPUT_FOLDER
 TRAIN_DATA = "%s/train.csv" % DATA_FOLDER
+TEST_DATA = "%s/test.csv" % DATA_FOLDER
 BREED_LABELS = "%s/breed_labels.csv" % DATA_FOLDER
 COLOR_LABELS = "%s/color_labels.csv" % DATA_FOLDER
 STATE_LABELS = "%s/state_labels.csv" % DATA_FOLDER
+TRAIN_COLUMNS = "%s/train_columns.json" % DATA_FOLDER
+SUBMISSION_PATH = "%s/submission.csv" % DATA_FOLDER
 
+COL_ID = 'PetID'
 COL_Y = 'AdoptionSpeed'
 SEED = 42
 
@@ -31,14 +36,15 @@ def debug(msg, new_line=False):
 
 
 class Pets:
-    def __init__(self, calculation_limit_rows=None):
+    def __init__(self, csv_path, train_mode, calculation_limit_rows=None):
         pathlib.Path(OUTPUT_FOLDER).mkdir(parents=True, exist_ok=True)
+        self.train_mode = train_mode
         self.calculation_limit_rows = calculation_limit_rows
         if calculation_limit_rows:
             self.head_lines = calculation_limit_rows
         else:
             self.head_lines = 5
-        self.df = pd.read_csv(TRAIN_DATA, nrows=self.calculation_limit_rows)
+        self.df = pd.read_csv(csv_path, nrows=self.calculation_limit_rows)
 
     def pre_process(self):
         debug('pre process')
@@ -129,8 +135,11 @@ class Pets:
         self.df.drop('Name', axis=1, inplace=True)
         self.df.drop('RescuerID', axis=1, inplace=True)
         self.df.drop('Description', axis=1, inplace=True)
-        self.df.drop('PetID', axis=1, inplace=True)
+        self.df.drop(COL_ID, axis=1, inplace=True)
         self.df = pd.get_dummies(self.df)
+        if self.train_mode:
+            with open(TRAIN_COLUMNS, 'w') as f:
+                json.dump(list(self.df.columns), f)
         debug(self.df.head(self.head_lines), new_line=True)
 
     def train_model(self, test_size=0.3):
@@ -143,7 +152,7 @@ class Pets:
                                        max_features='sqrt',
                                        max_depth=100,
                                        bootstrap=False,
-                                       verbose=10,
+                                       verbose=0,
                                        random_state=SEED)
 
         y = np.array(self.df[COL_Y])
@@ -168,10 +177,41 @@ class Pets:
         with open(MODEL_PATH, 'wb') as f:
             pickle.dump(model, f)
 
+    def align_with_train_columns(self):
+        with open(TRAIN_COLUMNS, 'r') as f:
+            train_columns = json.load(f)
+        missing_columns = set(train_columns) - set(self.df.columns) - {COL_Y}
+        redundant_columns = set(self.df.columns) - set(train_columns)
+        debug("missing columns: {}".format(missing_columns))
+        debug("redundant columns: {}".format(redundant_columns))
+        for c in missing_columns:
+            self.df[c] = 0
+        for c in redundant_columns:
+            self.df.drop(c, axis=1, inplace=True)
+
+    def predict(self):
+        with open(MODEL_PATH, 'rb') as f:
+            model = pickle.load(f)
+        self.prepare_data()
+        self.align_with_train_columns()
+        x = np.array(self.df)
+        predictions = model.predict(x)
+        debug(predictions)
+
+        data = pd.DataFrame(predictions, columns=[COL_Y])
+        data[COL_ID] = pd.read_csv(TEST_DATA, nrows=self.calculation_limit_rows)[COL_ID]
+        data = data[[COL_ID, COL_Y]]
+        data.set_index(COL_ID, inplace=True)
+        debug(data.head(), new_line=True)
+        data.to_csv(SUBMISSION_PATH)
+
 
 pd.set_option('display.max_rows', 5000)
 pd.set_option('display.max_columns', 5000)
 pd.set_option('display.width', 100000)
 
-p = Pets(calculation_limit_rows=None)
-p.train_model()
+train = Pets(TRAIN_DATA, True, calculation_limit_rows=None)
+train.train_model()
+
+predict = Pets(TEST_DATA, False, calculation_limit_rows=None)
+predict.predict()
