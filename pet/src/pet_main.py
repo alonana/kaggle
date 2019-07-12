@@ -11,6 +11,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
 OUTPUT_FOLDER = "../output/"
+GRAPHS_FOLDER = "%s/graphs/" % OUTPUT_FOLDER
 DATA_FOLDER = "../data"
 MODEL_PATH = "%s/model.dat" % OUTPUT_FOLDER
 TRAIN_DATA = "%s/train.csv" % DATA_FOLDER
@@ -38,6 +39,7 @@ def debug(msg, new_line=False):
 class Pets:
     def __init__(self, csv_path, train_mode, calculation_limit_rows=None):
         pathlib.Path(OUTPUT_FOLDER).mkdir(parents=True, exist_ok=True)
+        pathlib.Path(GRAPHS_FOLDER).mkdir(parents=True, exist_ok=True)
         self.train_mode = train_mode
         self.calculation_limit_rows = calculation_limit_rows
         if calculation_limit_rows:
@@ -45,6 +47,9 @@ class Pets:
         else:
             self.head_lines = 5
         self.df = pd.read_csv(csv_path, nrows=self.calculation_limit_rows)
+        self.pre_process()
+        self.numeric_columns = self.df._get_numeric_data().columns
+        self.categoric_columns = list(set(self.df.columns) - set(self.numeric_columns))
 
     def pre_process(self):
         debug('pre process')
@@ -128,7 +133,6 @@ class Pets:
             fig.savefig(OUTPUT_FOLDER + "/missing_values.png")
 
     def prepare_data(self):
-        self.pre_process()
         debug('prepare data')
         # debug (self.df.info())
         # self.display_missing_values()
@@ -205,13 +209,36 @@ class Pets:
         debug(data.head(), new_line=True)
         data.to_csv(SUBMISSION_PATH)
 
+    def catplot_per_category(self, df, category):
+        debug("catplot for {}".format(category))
+        fig = sns.catplot(x=COL_Y, y=category, kind="violin", inner="stick", data=df, height=5).fig
+        fig.savefig(GRAPHS_FOLDER + "{}_catplot.png".format(category))
+        plt.close(fig)
+
+    def pairplot_for_numeric_column(self, df, c):
+        debug("pairplot for {}".format(c))
+        fig = sns.pairplot(df[[c, COL_Y]], markers='+', height=5, diag_kws=dict(bins=30)).fig
+        fig.savefig(GRAPHS_FOLDER + "{}_pairplot.png".format(c))
+        plt.close(fig)
+
+    def catplot_for_categories(self):
+        for c in self.categoric_columns:
+            self.catplot_per_category(self.df, c)
+
+    def pairplot_for_numeric(self):
+        for c in self.numeric_columns:
+            if c != COL_Y:
+                self.pairplot_for_numeric_column(self.df, c)
+
 
 pd.set_option('display.max_rows', 5000)
 pd.set_option('display.max_columns', 5000)
 pd.set_option('display.width', 100000)
 
-train = Pets(TRAIN_DATA, True, calculation_limit_rows=None)
-train.train_model()
-
-predict = Pets(TEST_DATA, False, calculation_limit_rows=None)
-predict.predict()
+train = Pets(TRAIN_DATA, True, calculation_limit_rows=1000)
+train.catplot_for_categories()
+train.pairplot_for_numeric()
+# train.train_model()
+#
+# predict = Pets(TEST_DATA, False, calculation_limit_rows=None)
+# predict.predict()
