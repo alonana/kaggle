@@ -1,19 +1,25 @@
 import json
 import pathlib
 import pickle
+import re
 from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from nltk.corpus import stopwords
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import train_test_split
 
 OUTPUT_FOLDER = "../output/"
 GRAPHS_FOLDER = "%s/graphs/" % OUTPUT_FOLDER
 DATA_FOLDER = "../data"
 MODEL_PATH = "%s/model.dat" % OUTPUT_FOLDER
+CLEAN_WORDS = "%s/words_clean_{}.csv" % OUTPUT_FOLDER
+WORDS_FEATURES = "%s/words_features_{}.csv" % OUTPUT_FOLDER
+WORDS_VECTORIZER = "%s/words_vectorizer.dat" % OUTPUT_FOLDER
 TRAIN_DATA = "%s/train.csv" % DATA_FOLDER
 TEST_DATA = "%s/test.csv" % DATA_FOLDER
 BREED_LABELS = "%s/breed_labels.csv" % DATA_FOLDER
@@ -25,6 +31,7 @@ SUBMISSION_PATH = "%s/submission.csv" % DATA_FOLDER
 COL_ID = 'PetID'
 COL_Y = 'AdoptionSpeed'
 SEED = 42
+WORDS_FEATURES_LIMIT = 5
 
 NA = 'N/A'
 
@@ -47,9 +54,64 @@ class Pets:
         else:
             self.head_lines = 5
         self.df = pd.read_csv(csv_path, nrows=self.calculation_limit_rows)
+        debug("{} rows loaded".format(self.df.shape[0]))
         self.pre_process()
         self.numeric_columns = self.df._get_numeric_data().columns
         self.categoric_columns = list(set(self.df.columns) - set(self.numeric_columns))
+        self.cleaned_rows = 0
+
+    def words_clean_column(self, text):
+        debug(text)
+        clean = re.sub("[^A-Za-z]", " ", text)
+        clean = clean.lower()
+        words = clean.split()
+        words = [w for w in words if w not in stopwords.words('english')]
+        result = ' '.join(words)
+        self.cleaned_rows += 1
+        if self.cleaned_rows % 300 == 0:
+            debug("cleaned {} rows".format(self.cleaned_rows))
+        return result
+
+    def get_clean_word_path(self):
+        return CLEAN_WORDS.format("train" if self.train_mode else "predict")
+
+    def get_word_features_path(self):
+        return WORDS_FEATURES.format("train" if self.train_mode else "predict")
+
+    def bag_of_words_clean(self):
+        debug('clean_words')
+        self.cleaned_rows = 0
+        bag = pd.DataFrame()
+        bag['text'] = self.df['Description'].apply(self.words_clean_column)
+        bag.to_csv(self.get_clean_word_path())
+
+    def bag_of_words_prepare(self):
+        df = pd.read_csv(self.get_clean_word_path(), nrows=self.calculation_limit_rows)
+        debug("preparing words from text:\n{}".format(df.head()))
+
+        vectorizer = CountVectorizer(analyzer="word",
+                                     tokenizer=None,
+                                     preprocessor=None,
+                                     stop_words=None,
+                                     max_features=WORDS_FEATURES_LIMIT)
+
+        features = vectorizer.fit_transform(df.text)
+
+        with open(WORDS_VECTORIZER, 'wb') as f:
+            pickle.dump(vectorizer, f)
+
+        features = features.toarray()
+        features_names = vectorizer.get_feature_names()
+        amounts = np.sum(features, axis=0)
+        distribution = []
+        for w, c in zip(features_names, amounts):
+            distribution.append((w, c))
+        distribution.sort(key=lambda x: x[1], reverse=True)
+        debug("distribution: {}".format(distribution))
+        prepared = pd.DataFrame(columns=features_names, data=features)
+        prepared = prepared.applymap(lambda x: 0 if x == 0 else 1)
+        debug("words features:\n{}".format(prepared.head()))
+        prepared.to_csv(self.get_word_features_path())
 
     def pre_process(self):
         debug('pre process')
@@ -76,7 +138,7 @@ class Pets:
         self.translate_column('Sterilized', yes_no_not_sure)
         self.translate_column('Health', {0: NA, 1: 'Healthy', 2: 'Minor Injury', 3: 'Serious Injury'})
         self.translate_column('State', states)
-        debug(self.df.head(self.head_lines), new_line=True)
+        debug("table post pre process:\n{}".format(self.df.head(self.head_lines)))
 
     def translate_column(self, column, translation):
         self.df[column] = self.df.apply(lambda row: self.produce_translation(row, column, translation), axis=1)
@@ -136,6 +198,11 @@ class Pets:
         debug('prepare data')
         # debug (self.df.info())
         # self.display_missing_values()
+
+        words = pd.read_csv(self.get_word_features_path())
+        self.df = pd.merge(self.df, words, left_on=None, right_on=None, left_index=True, right_index=True)
+        self.df.drop('Unnamed: 0', axis=1, inplace=True)
+
         self.df.drop('Name', axis=1, inplace=True)
         self.df.drop('RescuerID', axis=1, inplace=True)
         self.df.drop('Description', axis=1, inplace=True)
@@ -144,7 +211,7 @@ class Pets:
         if self.train_mode:
             with open(TRAIN_COLUMNS, 'w') as f:
                 json.dump(list(self.df.columns), f)
-        debug(self.df.head(self.head_lines), new_line=True)
+        debug("prepared data:\n{}".format(self.df.head(self.head_lines)))
 
     def train_model(self, test_size=0.3):
         self.prepare_data()
@@ -193,12 +260,30 @@ class Pets:
         for c in redundant_columns:
             self.df.drop(c, axis=1, inplace=True)
 
+    def predict_prepare_words(self):
+        with open(WORDS_VECTORIZER, 'rb') as f:
+            vectorizer = pickle.load(f)
+
+        clean_words = pd.read_csv(self.get_clean_word_path(), nrows=self.calculation_limit_rows)
+        clean_words.drop("Unnamed: 0", axis=1, inplace=True)
+        debug("predict words:\n{}".format(clean_words.head()))
+
+        words_features = vectorizer.transform(clean_words.text)
+        words_features = words_features.toarray()
+        features_names = vectorizer.get_feature_names()
+        prepared = pd.DataFrame(columns=features_names, data=words_features)
+        prepared = prepared.applymap(lambda x: 0 if x == 0 else 1)
+        debug("words features:\n{}".format(prepared.head()))
+        prepared.to_csv(self.get_word_features_path())
+
     def predict(self):
-        with open(MODEL_PATH, 'rb') as f:
-            model = pickle.load(f)
         self.prepare_data()
         self.align_with_train_columns()
         x = np.array(self.df)
+
+        with open(MODEL_PATH, 'rb') as f:
+            model = pickle.load(f)
+
         predictions = model.predict(x)
         debug(predictions)
 
@@ -235,10 +320,14 @@ pd.set_option('display.max_rows', 5000)
 pd.set_option('display.max_columns', 5000)
 pd.set_option('display.width', 100000)
 
-train = Pets(TRAIN_DATA, True, calculation_limit_rows=1000)
-train.catplot_for_categories()
-train.pairplot_for_numeric()
-# train.train_model()
+train = Pets(TRAIN_DATA, True, calculation_limit_rows=None)
+train.bag_of_words_clean()
+train.bag_of_words_prepare()
+# train.catplot_for_categories()
+# train.pairplot_for_numeric()
+train.train_model()
 #
-# predict = Pets(TEST_DATA, False, calculation_limit_rows=None)
-# predict.predict()
+predict = Pets(TEST_DATA, False, calculation_limit_rows=None)
+predict.bag_of_words_clean()
+predict.predict_prepare_words()
+predict.predict()
