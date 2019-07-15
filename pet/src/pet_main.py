@@ -28,10 +28,14 @@ STATE_LABELS = "%s/state_labels.csv" % DATA_FOLDER
 TRAIN_COLUMNS = "%s/train_columns.json" % DATA_FOLDER
 SUBMISSION_PATH = "%s/submission.csv" % DATA_FOLDER
 
+IMPORTANCE_THRESHOLD = 0.001
+IMPORTANCE_LOW_CURRENT = OUTPUT_FOLDER + "importance_low_current.txt"
+IMPORTANCE_LOW_TOTAL = OUTPUT_FOLDER + "importance_low_total.txt"
+
 COL_ID = 'PetID'
 COL_Y = 'AdoptionSpeed'
 SEED = 42
-WORDS_FEATURES_LIMIT = 5
+WORDS_FEATURES_LIMIT = 1000
 
 NA = 'N/A'
 
@@ -61,7 +65,7 @@ class Pets:
         self.cleaned_rows = 0
 
     def words_clean_column(self, text):
-        debug(text)
+        text = str(text)
         clean = re.sub("[^A-Za-z]", " ", text)
         clean = clean.lower()
         words = clean.split()
@@ -87,7 +91,9 @@ class Pets:
 
     def bag_of_words_prepare(self):
         df = pd.read_csv(self.get_clean_word_path(), nrows=self.calculation_limit_rows)
+        df.drop('Unnamed: 0', axis=1, inplace=True)
         debug("preparing words from text:\n{}".format(df.head()))
+        df['text'] = df.apply(lambda row: "" if row['text'] is np.nan else row['text'], axis=1)
 
         vectorizer = CountVectorizer(analyzer="word",
                                      tokenizer=None,
@@ -200,14 +206,26 @@ class Pets:
         # self.display_missing_values()
 
         words = pd.read_csv(self.get_word_features_path())
+        words.drop('Unnamed: 0', axis=1, inplace=True)
+        new_words_names = {}
+        for n in words.columns:
+            new_words_names[n] = 'word_' + n
+        words.rename(columns=new_words_names, inplace=True)
+        debug("words features:\n{}".format(words.head()))
+
         self.df = pd.merge(self.df, words, left_on=None, right_on=None, left_index=True, right_index=True)
-        self.df.drop('Unnamed: 0', axis=1, inplace=True)
 
         self.df.drop('Name', axis=1, inplace=True)
         self.df.drop('RescuerID', axis=1, inplace=True)
         self.df.drop('Description', axis=1, inplace=True)
         self.df.drop(COL_ID, axis=1, inplace=True)
         self.df = pd.get_dummies(self.df)
+
+        with open(IMPORTANCE_LOW_TOTAL) as file:
+            for c in file.read().splitlines():
+                if c in self.df:
+                    self.df.drop(c, axis=1, inplace=True)
+
         if self.train_mode:
             with open(TRAIN_COLUMNS, 'w') as f:
                 json.dump(list(self.df.columns), f)
@@ -217,13 +235,13 @@ class Pets:
         self.prepare_data()
 
         debug('train model')
-        model = RandomForestClassifier(n_estimators=800,
+        model = RandomForestClassifier(n_estimators=1000,
                                        min_samples_split=2,
                                        min_samples_leaf=1,
                                        max_features='sqrt',
                                        max_depth=100,
                                        bootstrap=False,
-                                       verbose=0,
+                                       verbose=10,
                                        random_state=SEED)
 
         y = np.array(self.df[COL_Y])
@@ -241,6 +259,15 @@ class Pets:
             if hasattr(model, 'feature_importances_'):
                 importance = pd.DataFrame(model.feature_importances_, index=prepared.columns, columns=['importance'])
                 importance = importance.sort_values('importance', ascending=False)
+
+                located_low = []
+                with open(IMPORTANCE_LOW_CURRENT, "w") as file:
+                    for i, row in importance.iterrows():
+                        if row.importance < IMPORTANCE_THRESHOLD:
+                            file.write(i + "\n")
+                            located_low.append(i)
+                    if len(located_low) > 0:
+                        debug("low importance features located: {}".format(located_low))
 
                 with open(OUTPUT_FOLDER + "importance.txt", "w") as file:
                     file.write(str(importance))
@@ -266,6 +293,7 @@ class Pets:
 
         clean_words = pd.read_csv(self.get_clean_word_path(), nrows=self.calculation_limit_rows)
         clean_words.drop("Unnamed: 0", axis=1, inplace=True)
+        clean_words['text'] = clean_words.apply(lambda row: "" if row['text'] is np.nan else row['text'], axis=1)
         debug("predict words:\n{}".format(clean_words.head()))
 
         words_features = vectorizer.transform(clean_words.text)
@@ -306,14 +334,38 @@ class Pets:
         fig.savefig(GRAPHS_FOLDER + "{}_pairplot.png".format(c))
         plt.close(fig)
 
+    def boxplot_for_numeric_column(self, df, c):
+        debug("boxplot for {}".format(c))
+        fig, ax = plt.subplots()
+        sns.boxplot(x=COL_Y, y=c, data=df, ax=ax)
+        plt.savefig(GRAPHS_FOLDER + "{}_boxplot.png".format(c))
+        plt.close(fig)
+
+    def boxplot_for_category_column(self, df, c):
+        debug("boxplot for {}".format(c))
+        fig, ax = plt.subplots()
+        sns.boxplot(x=c, y=COL_Y, data=df, ax=ax)
+        plt.savefig(GRAPHS_FOLDER + "{}_boxplot.png".format(c))
+        plt.close(fig)
+
     def catplot_for_categories(self):
         for c in self.categoric_columns:
             self.catplot_per_category(self.df, c)
+
+    def boxplot_for_categories(self):
+        for c in self.categoric_columns:
+            if c != 'Name' and c != 'RescuerID' and c != 'Description' and c != 'PetID':
+                self.boxplot_for_category_column(self.df, c)
 
     def pairplot_for_numeric(self):
         for c in self.numeric_columns:
             if c != COL_Y:
                 self.pairplot_for_numeric_column(self.df, c)
+
+    def boxplot_for_numeric(self):
+        for c in self.numeric_columns:
+            if c != COL_Y:
+                self.boxplot_for_numeric_column(self.df, c)
 
 
 pd.set_option('display.max_rows', 5000)
@@ -321,13 +373,15 @@ pd.set_option('display.max_columns', 5000)
 pd.set_option('display.width', 100000)
 
 train = Pets(TRAIN_DATA, True, calculation_limit_rows=None)
-train.bag_of_words_clean()
-train.bag_of_words_prepare()
+# train.bag_of_words_clean()
+# train.bag_of_words_prepare()
 # train.catplot_for_categories()
 # train.pairplot_for_numeric()
-train.train_model()
-#
-predict = Pets(TEST_DATA, False, calculation_limit_rows=None)
-predict.bag_of_words_clean()
-predict.predict_prepare_words()
-predict.predict()
+train.boxplot_for_numeric()
+train.boxplot_for_categories()
+# train.train_model()
+
+# predict = Pets(TEST_DATA, False, calculation_limit_rows=None)
+# predict.bag_of_words_clean()
+# predict.predict_prepare_words()
+# predict.predict()
