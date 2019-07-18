@@ -11,6 +11,7 @@ import seaborn as sns
 from nltk.corpus import stopwords
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import train_test_split
 
 OUTPUT_FOLDER = "../output/"
@@ -20,13 +21,13 @@ MODEL_PATH = "%s/model.dat" % OUTPUT_FOLDER
 CLEAN_WORDS = "%s/words_clean_{}.csv" % OUTPUT_FOLDER
 WORDS_FEATURES = "%s/words_features_{}.csv" % OUTPUT_FOLDER
 WORDS_VECTORIZER = "%s/words_vectorizer.dat" % OUTPUT_FOLDER
+TRAIN_COLUMNS = "%s/train_columns.json" % OUTPUT_FOLDER
+SUBMISSION_PATH = "%s/submission.csv" % OUTPUT_FOLDER
 TRAIN_DATA = "%s/train.csv" % DATA_FOLDER
 TEST_DATA = "%s/test.csv" % DATA_FOLDER
 BREED_LABELS = "%s/breed_labels.csv" % DATA_FOLDER
 COLOR_LABELS = "%s/color_labels.csv" % DATA_FOLDER
 STATE_LABELS = "%s/state_labels.csv" % DATA_FOLDER
-TRAIN_COLUMNS = "%s/train_columns.json" % DATA_FOLDER
-SUBMISSION_PATH = "%s/submission.csv" % DATA_FOLDER
 
 IMPORTANCE_THRESHOLD = 0.001
 IMPORTANCE_LOW_CURRENT = OUTPUT_FOLDER + "importance_low_current.txt"
@@ -200,7 +201,7 @@ class Pets:
             plt.title('Percent missing data by feature', fontsize=15)
             fig.savefig(OUTPUT_FOLDER + "/missing_values.png")
 
-    def prepare_data(self):
+    def prepare_data(self, save_columns):
         debug('prepare data')
         # debug (self.df.info())
         # self.display_missing_values()
@@ -226,13 +227,14 @@ class Pets:
                 if c in self.df:
                     self.df.drop(c, axis=1, inplace=True)
 
-        if self.train_mode:
+        if save_columns:
+            debug('saving model columns names')
             with open(TRAIN_COLUMNS, 'w') as f:
                 json.dump(list(self.df.columns), f)
         debug("prepared data:\n{}".format(self.df.head(self.head_lines)))
 
     def train_model(self, test_size=0.3):
-        self.prepare_data()
+        self.prepare_data(True)
 
         debug('train model')
         model = RandomForestClassifier(n_estimators=1000,
@@ -275,6 +277,59 @@ class Pets:
         with open(MODEL_PATH, 'wb') as f:
             pickle.dump(model, f)
 
+    def roc_curve(self):
+        self.prepare_data(False)
+        self.align_with_train_columns()
+        debug('ROC curve')
+        with open(MODEL_PATH, 'rb') as f:
+            model = pickle.load(f)
+
+        y = np.array(self.df[COL_Y])
+        prepared = self.df.drop(COL_Y, 1)
+        x = np.array(prepared)
+        predicted_probabilities = model.predict_proba(x)
+
+        n_classes = 5
+        false_positive_rate = dict()
+        true_positive_rate = dict()
+        roc_auc = dict()
+        all_y_test = np.array([])
+        all_y_predict_probabilities = np.array([])
+        for current_class_index in range(n_classes):
+            y_test_current_class = [1 if value == current_class_index else 0 for value in y]
+            all_y_test = np.concatenate([all_y_test, y_test_current_class])
+            all_y_predict_probabilities = np.concatenate(
+                [all_y_predict_probabilities, predicted_probabilities[:, current_class_index]])
+            false_positive_rate[current_class_index], true_positive_rate[current_class_index], _ = roc_curve(
+                y_test_current_class, predicted_probabilities[:, current_class_index])
+            roc_auc[current_class_index] = auc(false_positive_rate[current_class_index],
+                                               true_positive_rate[current_class_index])
+
+        false_positive_rate["average"], true_positive_rate["average"], _ = roc_curve(all_y_test,
+                                                                                     all_y_predict_probabilities)
+        roc_auc["average"] = auc(false_positive_rate["average"], true_positive_rate["average"])
+
+        plt.figure()
+        plt.plot(false_positive_rate["average"], true_positive_rate["average"],
+                 label='Average ROC curve (area = {0:0.2f})'
+                       ''.format(roc_auc["average"]),
+                 color='deeppink', linestyle=':', linewidth=4)
+
+        for current_class_index in range(n_classes):
+            plt.plot(false_positive_rate[current_class_index], true_positive_rate[current_class_index], lw=2,
+                     label='ROC curve of class {0} (area = {1:0.2f})'
+                           ''.format(current_class_index, roc_auc[current_class_index]))
+
+        plt.plot([0, 1], [0, 1], 'k--', lw=2)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC multi-class')
+        plt.legend(loc="lower right")
+        plt.savefig(OUTPUT_FOLDER + "roc.png")
+        plt.close()
+
     def align_with_train_columns(self):
         with open(TRAIN_COLUMNS, 'r') as f:
             train_columns = json.load(f)
@@ -305,7 +360,7 @@ class Pets:
         prepared.to_csv(self.get_word_features_path())
 
     def predict(self):
-        self.prepare_data()
+        self.prepare_data(False)
         self.align_with_train_columns()
         x = np.array(self.df)
 
@@ -377,9 +432,10 @@ train = Pets(TRAIN_DATA, True, calculation_limit_rows=None)
 # train.bag_of_words_prepare()
 # train.catplot_for_categories()
 # train.pairplot_for_numeric()
-train.boxplot_for_numeric()
-train.boxplot_for_categories()
+# train.boxplot_for_numeric()
+# train.boxplot_for_categories()
 # train.train_model()
+train.roc_curve()
 
 # predict = Pets(TEST_DATA, False, calculation_limit_rows=None)
 # predict.bag_of_words_clean()
