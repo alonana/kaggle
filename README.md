@@ -22,6 +22,7 @@ pip install Pillow
 pip install scikit-image
 pip install BeautifulSoup4
 pip install nltk
+pip install keras
 
 # What have I learned?
 
